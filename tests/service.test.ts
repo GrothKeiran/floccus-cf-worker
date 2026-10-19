@@ -17,14 +17,14 @@ describe('认证与账户管理（真实 workerd + D1）', () => {
     expect((await h.request('/api/register', 'POST', '{}')).status).toBe(403);
     expect((await h.request('/api/admin/users', 'POST', '{}', 'Bearer incorrect')).status).toBe(401);
   });
-  test('scrypt 密码验证、错误认证、原密码不得用于 DAV', async () => {
+  test('scrypt 密码验证、错误认证、账户密码可以直接用于 DAV', async () => {
     const row = await h.db.prepare('SELECT password_hash FROM users WHERE id=?').bind(a.userId).first<{ password_hash: string }>();
     expect(row!.password_hash).toMatch(/^scrypt\$16384\$8\$5\$/);
     expect(row!.password_hash).not.toContain(PASSWORD);
     expect((await h.request('/api/login', 'POST', JSON.stringify({ username: 'alice', password: 'incorrect' }))).status).toBe(401);
     expect((await h.request(FILE)).status).toBe(401);
     expect((await h.request(FILE, 'GET', undefined, 'Basic !!!')).status).toBe(401);
-    expect((await h.request(FILE, 'GET', undefined, `Basic ${Buffer.from('alice:' + PASSWORD).toString('base64')}`)).status).toBe(401);
+    expect((await h.request(FILE, 'GET', undefined, `Basic ${Buffer.from('alice:' + PASSWORD).toString('base64')}`)).status).toBe(404);
   });
   test('过期会话拒绝访问，凭证原子上限不超过50', async () => {
     const login = await h.request('/api/login', 'POST', JSON.stringify({ username: 'alice', password: PASSWORD }));
@@ -32,7 +32,7 @@ describe('认证与账户管理（真实 workerd + D1）', () => {
     await h.db.prepare("UPDATE credentials SET expires_at=0 WHERE user_id=? AND label='management' AND id!=?").bind(a.userId, (await h.db.prepare("SELECT id FROM credentials WHERE user_id=? AND kind='session' ORDER BY created_at LIMIT 1").bind(a.userId).first('id'))).run();
     expect((await h.request('/api/me', 'GET', undefined, `Bearer ${accessToken}`)).status).toBe(401);
     // SQL fixture fills the remaining credential slots; no real secrets are exposed.
-    const existing = await h.db.prepare('SELECT COUNT(*) AS n FROM credentials WHERE user_id=? AND (expires_at IS NULL OR expires_at>?)').bind(a.userId, Date.now()).first<number>('n');
+    const existing = await h.db.prepare("SELECT COUNT(*) AS n FROM credentials WHERE user_id=? AND auth_mode='token' AND (expires_at IS NULL OR expires_at>?)").bind(a.userId, Date.now()).first<number>('n');
     const ids = Array.from({ length: 50 - Number(existing) }, (_, i) => 'quota-' + i);
     await h.db.prepare(`INSERT INTO credentials(id,user_id,kind,label,token_hash,created_at)
       SELECT value,?,'device','quota',value,0 FROM json_each(?)`).bind(a.userId, JSON.stringify(ids)).run();

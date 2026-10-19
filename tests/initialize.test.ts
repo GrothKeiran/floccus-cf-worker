@@ -45,7 +45,7 @@ describe('仅两个变量与空 D1 的完整初始化', () => {
     expect(user!.password_hash).toMatch(/^scrypt\$16384\$8\$5\$/);
     expect(user!.password_hash).not.toContain(INIT_PASSWORD);
     expect(await fresh.db.prepare('SELECT COUNT(*) AS n FROM users').first('n')).toBe(1);
-    expect(await fresh.db.prepare('SELECT COUNT(*) AS n FROM d1_migrations').first('n')).toBe(3);
+    expect(await fresh.db.prepare('SELECT COUNT(*) AS n FROM d1_migrations').first('n')).toBe(4);
     const keys = (await fresh.db.prepare("SELECT key,value FROM app_settings WHERE key IN ('admin_token','token_pepper') ORDER BY key").all()).results;
     expect(keys).toHaveLength(2); previousKeys = JSON.stringify(keys);
     expect(keys.every(row => /^[a-f0-9]{64}$/.test(String(row.value)))).toBe(true);

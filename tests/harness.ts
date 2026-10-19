@@ -15,9 +15,11 @@ export async function harness(bindings: Record<string, string> = {}, options: { 
   });
   const mf = new Miniflare(settings());
   const db = await mf.getD1Database('DB');
+  if (options.migrate !== false) await db.prepare('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)').run();
   for (const name of (options.migrate === false ? [] : await readdir('migrations')).filter(name => /^\d+_.+\.sql$/.test(name)).sort()) {
     const migration = await readFile('migrations/' + name, 'utf8');
-    for (const sql of migration.split(';').map(s => s.trim()).filter(Boolean)) await db.prepare(sql).run();
+    for (const sql of migration.replace(/^\s*--.*$/gm, '').split(';').map(s => s.trim()).filter(Boolean)) await db.prepare(sql).run();
+    await db.prepare('INSERT INTO d1_migrations(name) VALUES(?)').bind(name).run();
   }
   const trace: { method: string; path: string; status: number }[] = [];
   async function request(path: string, method = 'GET', body?: string, auth?: string, headers: Record<string, string> = {}) {

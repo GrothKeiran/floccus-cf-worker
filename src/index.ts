@@ -25,7 +25,7 @@ export default {
       if (path === '/' && req.method === 'GET') return securityHeaders(new Response(null, { status: 302, headers: { Location: '/admin' } }));
       const page = adminRoutes(req, path);
       if (page) return securityHeaders(page, true);
-      if (path === '/health' && req.method === 'GET') return securityHeaders(json({ status: 'ok', service: 'floccus-cf-worker', protocol: 'webdav-xbel', version: '0.3.0' }));
+      if (path === '/health' && req.method === 'GET') return securityHeaders(json({ status: 'ok', service: 'floccus-cf-worker', protocol: 'webdav-xbel', version: '0.4.0' }));
       if (path === '/api/setup/status' && req.method === 'GET') return securityHeaders(json(await initializationStatus(bindings)));
       const env = await runtimeEnv(bindings);
       if (path === '/health/ready' && req.method === 'GET') {

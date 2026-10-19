@@ -2,6 +2,12 @@ import type { Env, Principal } from '../types';
 import { fail, json, jsonBody } from '../http';
 import { constantEqual, hashPassword, randomToken, tokenHash, verifyPassword } from './crypto';
 const DAY = 86_400_000;
+// Successful password proofs only: bounded, isolate-local, never persisted in D1.
+// Including the current stored hash makes resets invalidate proofs immediately.
+const passwordProofs = new Map<string, number>();
+const PROOF_MS = 120_000;
+const CONTEXT_LIMIT = 32;
+
 export async function limit(env: Env, key: string, maximum: number, windowMs = 60_000): Promise<void> {
   const bucket = Math.floor(Date.now() / windowMs) * windowMs;
   const k = await tokenHash(`rate:${key}`, env.TOKEN_PEPPER);
@@ -30,23 +36,64 @@ export async function authenticate(req: Request, env: Env, kind: 'session' | 'de
       username = basic.slice(0, colon); token = basic.slice(colon + 1);
     } catch { fail(401, 'unauthorized'); }
   }
-  if (token.length < 32 || token.length > 256) fail(401, 'unauthorized');
-  const row = await env.DB.prepare(`SELECT c.id,c.user_id,u.username FROM credentials c JOIN users u ON u.id=c.user_id
-    WHERE c.token_hash=? AND c.kind=? AND (c.expires_at IS NULL OR c.expires_at>?)`)
-    .bind(await tokenHash(token, env.TOKEN_PEPPER), kind, Date.now()).first<{ id: string; user_id: string; username: string }>();
-  if (!row || (kind === 'device' && username?.toLowerCase() !== row.username.toLowerCase())) fail(401, 'unauthorized');
-  return { userId: row.user_id, credentialId: row.id, kind };
+  if (token.length > 256 || token.length < (kind === 'session' ? 32 : 14) || (username !== null && username.length > 64)) fail(401, 'unauthorized');
+  if (token.length >= 32) {
+    const row = await env.DB.prepare(`SELECT c.id,c.user_id,u.username FROM credentials c JOIN users u ON u.id=c.user_id
+      WHERE c.token_hash=? AND c.kind=? AND c.auth_mode='token' AND (c.expires_at IS NULL OR c.expires_at>?)`)
+      .bind(await tokenHash(token, env.TOKEN_PEPPER), kind, Date.now()).first<{ id: string; user_id: string; username: string }>();
+    if (row && (kind === 'session' || username?.toLowerCase() === row.username.toLowerCase())) return { userId: row.user_id, credentialId: row.id, kind };
+  }
+  if (kind !== 'device' || username === null) fail(401, 'unauthorized');
+  return passwordPrincipal(req, env, username.toLowerCase(), token);
+}
+async function passwordPrincipal(req: Request, env: Env, username: string, password: string): Promise<Principal> {
+  const now = Date.now();
+  const user = await env.DB.prepare('SELECT id,password_hash FROM users WHERE username=?').bind(username)
+    .first<{ id: string; password_hash: string }>();
+  const proof = await tokenHash(JSON.stringify(['password-proof', user?.id ?? username, user?.password_hash ?? '', password]), env.TOKEN_PEPPER);
+  if ((passwordProofs.get(proof) ?? 0) <= now) {
+    await limit(env, `dav-password-ip:${req.headers.get('CF-Connecting-IP') ?? 'local'}`, 30);
+    await limit(env, `dav-password-name:${username}`, 20);
+    // Unknown names also perform scrypt; no fast persistent password verifier.
+    if (!await verifyPassword(password, user?.password_hash) || !user) fail(401, 'unauthorized');
+    for (const [key, expiry] of passwordProofs) if (expiry <= now) passwordProofs.delete(key);
+    if (passwordProofs.size >= 512) passwordProofs.delete(passwordProofs.keys().next().value!);
+    passwordProofs.set(proof, now + PROOF_MS);
+  }
+  if (!user) fail(401, 'unauthorized');
+  // Floccus Basic auth has no stable device ID. Separate common browser contexts
+  // without persisting IP/UA. Same UA + same egress is NOT a unique device identity.
+  const id = 'pwd_' + await tokenHash(JSON.stringify(['password-context', user.id, user.password_hash,
+    req.headers.get('CF-Connecting-IP') ?? 'local', (req.headers.get('User-Agent') ?? '').slice(0, 1024)]), env.TOKEN_PEPPER);
+  const existing = await env.DB.prepare(`SELECT c.expires_at FROM credentials c JOIN users u ON u.id=c.user_id
+    WHERE c.id=? AND c.user_id=? AND c.auth_mode='password' AND u.password_hash=?`)
+    .bind(id, user.id, user.password_hash).first<{ expires_at: number }>();
+  if (!existing || existing.expires_at < now + 3_600_000) {
+    const inserted = await env.DB.prepare(`INSERT INTO credentials(id,user_id,kind,label,token_hash,expires_at,created_at,auth_mode)
+      SELECT ?,?,'device','Account password context',?,?,?,'password' FROM users WHERE id=? AND password_hash=?
+        AND ((SELECT COUNT(*) FROM credentials WHERE user_id=? AND auth_mode='password' AND expires_at>?)<?
+          OR EXISTS(SELECT 1 FROM credentials WHERE id=? AND expires_at>?))
+      ON CONFLICT(id) DO UPDATE SET expires_at=excluded.expires_at RETURNING id`)
+      .bind(id, user.id, await tokenHash(randomToken(), env.TOKEN_PEPPER), now + DAY, now,
+        user.id, user.password_hash, user.id, now, CONTEXT_LIMIT, id, now).first();
+    if (!inserted) {
+      const current = await env.DB.prepare('SELECT password_hash FROM users WHERE id=?').bind(user.id).first<string>('password_hash');
+      if (current !== user.password_hash) fail(401, 'authority_changed');
+      fail(429, 'password_context_limit');
+    }
+  }
+  return { userId: user.id, credentialId: id, kind: 'device' };
 }
 export async function issueCredential(env: Env, userId: string, kind: 'session' | 'device', label: string, authority: { passwordHash?: string; sessionId?: string } = {}): Promise<{ id: string; token: string; expiresAt: number | null }> {
   const id = crypto.randomUUID(); const token = randomToken(kind === 'device' ? 'app_' : 'ses_');
   const expiresAt = kind === 'session' ? Date.now() + DAY : null;
   const inserted = await env.DB.prepare(`INSERT INTO credentials(id,user_id,kind,label,token_hash,expires_at,created_at)
-    SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM credentials WHERE user_id=? AND (expires_at IS NULL OR expires_at>?))<50
+    SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM credentials WHERE user_id=? AND auth_mode='token' AND (expires_at IS NULL OR expires_at>?))<50
       AND EXISTS(SELECT 1 FROM users WHERE id=? AND password_hash=COALESCE(?,password_hash))
       AND (? IS NULL OR EXISTS(SELECT 1 FROM credentials WHERE id=? AND user_id=? AND kind='session' AND expires_at>?)) RETURNING id`)
     .bind(id, userId, kind, label, await tokenHash(token, env.TOKEN_PEPPER), expiresAt, Date.now(), userId, Date.now(), userId, authority.passwordHash ?? null, authority.sessionId ?? null, authority.sessionId ?? null, userId, Date.now()).first();
   if (!inserted) {
-    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM credentials WHERE user_id=? AND (expires_at IS NULL OR expires_at>?)').bind(userId, Date.now()).first<{ n: number }>();
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM credentials WHERE user_id=? AND auth_mode='token' AND (expires_at IS NULL OR expires_at>?)").bind(userId, Date.now()).first<{ n: number }>();
     if ((count?.n ?? 0) >= 50) fail(422, 'credential_limit');
     fail(401, 'authority_changed');
   }
@@ -128,11 +175,11 @@ export async function authRoutes(req: Request, env: Env, path: string): Promise<
     return json({ id: credential.id, applicationPassword: credential.token }, 201);
   }
   if (path === '/api/devices' && req.method === 'GET') {
-    const rows = await env.DB.prepare("SELECT id,label,created_at FROM credentials WHERE user_id=? AND kind='device'").bind(p.userId).all();
+    const rows = await env.DB.prepare("SELECT id,label,created_at FROM credentials WHERE user_id=? AND kind='device' AND auth_mode='token'").bind(p.userId).all();
     return json(rows.results);
   }
   if (/^\/api\/devices\/[^/]+$/.test(path) && req.method === 'DELETE') {
-    await env.DB.prepare("DELETE FROM credentials WHERE user_id=? AND id=? AND kind='device'").bind(p.userId, path.split('/').pop()).run();
+    await env.DB.prepare("DELETE FROM credentials WHERE user_id=? AND id=? AND kind='device' AND auth_mode='token'").bind(p.userId, path.split('/').pop()).run();
     await audit(env, p.userId, 'device_revoked');
     return new Response(null, { status: 204 });
   }

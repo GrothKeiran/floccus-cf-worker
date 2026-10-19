@@ -1,7 +1,7 @@
 const page = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Floccus 书签同步管理</title><link rel="stylesheet" href="/admin/app.css"><script src="/admin/app.js" defer></script></head>
-<body><main><header><span class="eyebrow">CLOUDFLARE WORKERS + D1</span><h1>Floccus 书签同步管理</h1><p>在网页里初始化账号，为每台浏览器创建独立的应用密码。</p></header>
+<body><main><header><span class="eyebrow">CLOUDFLARE WORKERS + D1</span><h1>Floccus 书签同步管理</h1><p>Floccus 直接填写 Worker 的 USERNAME 和 PASSWORD；这里提供可选设备管理与备份。</p></header>
 <p id="message" role="status" aria-live="polite"></p>
 <section id="login-panel" class="card"><h2 id="login-title">登录管理</h2>
 <p id="setup-note">正在读取初始化状态…</p>
@@ -10,14 +10,14 @@ const page = `<!doctype html>
 <button id="login-button" type="submit" disabled>登录</button></form>
 <p class="muted">这里使用账户密码，不使用 ADMIN_TOKEN 或 app_ 开头的设备密码。首次只需配置 USERNAME、PASSWORD 与 DB 绑定，再访问 /init。<a href="/init">初始化数据库</a></p></section>
 <section id="account-panel" hidden><div class="card account-heading"><div><h2>设备管理</h2><p>当前账户：<strong id="account-name"></strong></p></div><button id="logout" type="button" class="secondary">退出登录</button></div>
-<div class="card"><h2>添加一个浏览器</h2><p>每台浏览器分别创建，切勿多个设备共用同一应用密码。</p>
+<div class="card"><h2>可选：独立应用密码</h2><p>日常同步可直接使用账户密码，无需生成。需要单独撤销设备或区分并发配置时，再为每台浏览器单独生成应用密码。</p>
 <form id="device-form"><label for="device-label">设备名称</label><input id="device-label" maxlength="100" placeholder="例如：Chrome-电脑A" required><button id="create-device" type="submit">生成应用密码</button></form>
 <div id="credential-panel" hidden><h3>复制到 Floccus</h3><p class="warning">应用密码仅在此次显示，请保存到密码管理器。刷新页面后无法再次查看。</p>
 <label for="webdav-url">WebDAV URL</label><input id="webdav-url" readonly>
 <label for="floccus-username">用户名</label><input id="floccus-username" readonly>
 <label for="application-password">Floccus 的认证密码</label><input id="application-password" readonly autocomplete="off" spellcheck="false"><button id="copy-password" type="button" class="secondary">复制应用密码</button>
 <p>后端选择 WebDAV；文件名填 <code>bookmarks.xbel</code>；文件类型选 XBEL；另一个“加密密码”框必须留空。本地目录选择原生书签栏，正常使用双向合并。</p></div></div>
-<div class="card"><h2>已授权设备</h2><p class="muted">撤销只会使该设备的密码失效，不会删除书签。设备密码无法再次显示，丢失后请撤销并重新创建。</p><ul id="device-list"></ul><button id="refresh-devices" type="button" class="secondary">刷新设备列表</button></div>
+<div class="card"><h2>已签发的应用密码</h2><p class="muted">此列表不显示账户密码连接。撤销只使对应应用密码失效，不影响账户密码或书签。设备密码无法再次显示，丢失后请撤销并重新创建。</p><ul id="device-list"></ul><button id="refresh-devices" type="button" class="secondary">刷新设备列表</button></div>
 <div class="card"><h2>备份与安全</h2><button id="export" type="button" class="secondary">导出账户备份 JSON</button><p class="muted">备份包含书签和同步状态，请妥善保存，不要上传公开仓库。网页会话仅保存在当前页面内存中，刷新或关闭后需要重新登录。</p></div></section>
 <footer>首次访问 /init 会自动建表，并将 USERNAME、PASSWORD 初始化到用户表。密码只保存安全哈希；重复初始化不会重置已有账号或书签。</footer>
 </main></body></html>`;

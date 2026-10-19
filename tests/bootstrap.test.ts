@@ -57,7 +57,7 @@ describe('一次性网页初始化', () => {
     expect(hash).not.toContain(INITIAL);
     expect(await (await h.request('/api/setup/status')).json()).toEqual({ initialized: true, bootstrapConfigured: true, databaseInitialized: true });
   });
-  test('初始化后可登录并签发独立设备密码，账户密码仍不能用于 DAV', async () => {
+  test('初始化后可登录并签发独立设备密码，账户密码也可直接用于 DAV', async () => {
     const response = await h.request('/api/login', 'POST', setup());
     expect(response.status).toBe(200);
     session = (await response.json() as { accessToken: string }).accessToken;
@@ -68,7 +68,7 @@ describe('一次性网页初始化', () => {
     expect(applicationPassword).toMatch(/^app_[a-f0-9]{64}$/);
     const auth = 'Basic ' + Buffer.from('owner:' + applicationPassword).toString('base64');
     expect((await h.request('/dav/', 'OPTIONS', undefined, auth)).status).toBe(204);
-    expect((await h.request('/dav/', 'OPTIONS', undefined, 'Basic ' + Buffer.from('owner:' + INITIAL).toString('base64'))).status).toBe(401);
+    expect((await h.request('/dav/', 'OPTIONS', undefined, 'Basic ' + Buffer.from('owner:' + INITIAL).toString('base64'))).status).toBe(204);
     const listed = JSON.stringify(await (await h.request('/api/devices', 'GET', undefined, `Bearer ${session}`)).json());
     expect(listed).toContain('浏览器');
     expect(listed).not.toContain(applicationPassword);

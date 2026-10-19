@@ -61,23 +61,29 @@ npm run deploy
 
 ## 使用账号与配置 Floccus
 
-初始化后，打开自己的 **`/admin`**，用刚才的 `USERNAME` 和 `PASSWORD` 登录。网页可为每台浏览器生成独立应用密码，查看和撤销设备、导出备份、退出登录。这样不必把同一个设备凭证复制给所有浏览器。
+**从 v0.4.0 起，访问 `/init` 后就能直接配置 Floccus，不必进入 `/admin`，也不必生成应用密码。Floccus 使用的就是 Worker 中设置并初始化进 D1 的同一组 `USERNAME` / `PASSWORD`。**
 
 | Floccus 配置项 | 填什么 |
 |---|---|
 | 后端 | **WebDAV**，不是 Nextcloud Bookmarks |
 | URL | 自己的 HTTPS Worker 根地址加 **`/dav/`** |
-| 用户名 | 已初始化进 D1 的用户名 |
-| 密码 | `/admin` 为该浏览器生成的 **`applicationPassword`**（`app_…`） |
+| 用户名 | Worker 的 **`USERNAME`**（已由 `/init` 初始化进 D1） |
+| 密码 | Worker 的同一个 **`PASSWORD`**，不是另生成的密码 |
 | 文件名 | **`bookmarks.xbel`**，不要有前导 `/` |
 | 文件类型 | XBEL |
 | 另一个加密密码 / Passphrase | **留空**，不支持加密 XBEL |
 | 本地目录 | 浏览器原生书签栏 / 收藏夹栏 / 书签工具栏 |
 | 策略 | 双向合并，保留安全保护；先完成第一台，再连接下一台 |
 
-账号和设备密码的说明：[账户教程](docs/ACCOUNTS.md)。首次合并、E043 和拉取/推送的区别：[Floccus 配置](docs/FLOCCUS.md)。
+`/admin` 仅为可选高级管理：可签发独立应用密码、单独撤销设备、导出备份。旧 `app_…` 密码继续有效。账号密码模式按 IP/浏览器上下文区分常见客户端，但不能保证唯一设备身份；同出口且同浏览器的并发配置建议使用独立应用密码。
 
-## 已有 v0.1 / v0.2 部署如何升级
+账号和可选应用密码的说明：[账户教程](docs/ACCOUNTS.md)。首次合并、E043 和拉取/推送的区别：[Floccus 配置](docs/FLOCCUS.md)。
+
+## 已有部署如何升级
+
+v0.3 用户：备份 D1、更新 Worker、访问 `/init` 即可自动补迁移，随后直接使用原账户密码连接 Floccus。无需改变量、建新账号或重新导入书签，旧应用密码仍有效。见[升级到 v0.4.0](docs/UPGRADE-0.4.md)。
+
+### v0.1 / v0.2 用户
 
 **先保留原 `ADMIN_TOKEN`、`TOKEN_PEPPER`，更新 Worker 后访问 `/init`。** 程序自动补表，并把原内部密钥迁入 D1，保留已有设备密码。成功后才能移除旧版额外 Secrets。已有用户不会被新的 `USERNAME`、`PASSWORD` 覆盖。
 
@@ -110,6 +116,7 @@ npm run dev
 ```bash
 npm run typecheck
 npm run test:init       # 空库、仅两个变量、初始化竞态、密钥持久化和旧部署兼容
+npm run test:password   # 同一账户密码直接 DAV、密码重置、上下文配额和旧应用密码兼容
 npm run check           # 完整本地测试与部署 dry-run，不操作远端数据库
 npm run build:dashboard # 输出 .cache/dashboard/worker.mjs 与许可/校验和
 ```
@@ -119,7 +126,7 @@ npm run build:dashboard # 输出 .cache/dashboard/worker.mjs 与许可/校验和
 ## 文档
 
 - [控制台部署](docs/DEPLOY-DASHBOARD.md) / [Wrangler 部署](docs/DEPLOY-WRANGLER.md)
-- [账户与设备](docs/ACCOUNTS.md) / [Floccus 配置](docs/FLOCCUS.md) / [升级到 v0.3.0](docs/UPGRADE-0.3.md)
+- [账户与设备](docs/ACCOUNTS.md) / [Floccus 配置](docs/FLOCCUS.md) / [升级到 v0.4.0](docs/UPGRADE-0.4.md)
 - [费用与备份恢复](docs/DEPLOYMENT.md) / [安全](docs/SECURITY.md) / [验证范围](docs/VALIDATION.md)
 - [协议研究](docs/RESEARCH.md) / [协议说明](docs/PROTOCOL.md) / [贡献说明](CONTRIBUTING.md)
 

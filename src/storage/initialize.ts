@@ -28,6 +28,7 @@ export async function initializationStatus(bindings: Bindings): Promise<{ initia
     const keys = (await bindings.DB.prepare("SELECT key,value FROM app_settings WHERE key IN ('token_pepper','admin_token')").all<{ key: string; value: string }>()).results;
     const stored = new Map(keys.map(row => [row.key, row.value]));
     databaseInitialized = validKey(bindings.ADMIN_TOKEN ?? stored.get('admin_token')) && validKey(bindings.TOKEN_PEPPER ?? stored.get('token_pepper'));
+    databaseInitialized = databaseInitialized && !!await bindings.DB.prepare('SELECT name FROM d1_migrations WHERE name=?').bind(migrations[migrations.length - 1].name).first();
   } catch (error) { if (!String(error).includes('no such table')) throw error; }
   return { initialized, bootstrapConfigured: initialAccount(bindings) !== null, databaseInitialized };
 }

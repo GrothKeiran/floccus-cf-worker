@@ -30,5 +30,12 @@ export const migrations = [
     "statements": [
       "CREATE TABLE IF NOT EXISTS app_settings (\n  key TEXT PRIMARY KEY,\n  value TEXT NOT NULL,\n  created_at INTEGER NOT NULL\n)"
     ]
+  },
+  {
+    "name": "0004_password_dav.sql",
+    "statements": [
+      "ALTER TABLE credentials ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'token' CHECK(auth_mode IN ('token','password'))",
+      "CREATE INDEX IF NOT EXISTS credentials_auth_mode ON credentials(user_id,auth_mode,expires_at)"
+    ]
   }
 ] as const;

@@ -32,7 +32,7 @@ npm run configure -- "$D1_ID"
 
 打开 Wrangler 返回的 HTTPS 域名后加 **`/init`**。程序自动应用所有表结构、生成并持久保存内部密钥，并将环境 `USERNAME`、`PASSWORD` 初始化进用户表。已有用户不覆盖，重复访问不清空数据或更换密钥。
 
-然后打开 **`/admin`**，用自己的账户密码登录，为每个浏览器生成独立应用密码。详细见[账户教程](ACCOUNTS.md)和 [Floccus 配置](FLOCCUS.md)。
+然后直接在 Floccus 添加 WebDAV：URL 填自己的 HTTPS 域名 + `/dav/`，用户名填 **`USERNAME`**，认证密码填刚才设置的同一个 **`PASSWORD`**；文件名 `bookmarks.xbel`、类型 XBEL、加密口令留空。**不必登录 `/admin`，不必生成应用密码。** 管理页和独立应用密码仅为可选高级功能。详细见[账户教程](ACCOUNTS.md)和 [Floccus 配置](FLOCCUS.md)。
 
 ## 后续升级
 
