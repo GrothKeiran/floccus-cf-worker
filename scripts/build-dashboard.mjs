@@ -1,6 +1,6 @@
 import './cache-env.mjs';
 import { build } from 'esbuild';
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
@@ -45,7 +45,8 @@ await writeFile(resolve(output, 'THIRD_PARTY_LICENSES.txt'), notices);
 await appendFile(resolve(output, 'worker.mjs'), '\n/*!\n' + notices.replaceAll('*/', '* /') + '\n*/\n');
 // A dashboard SQL import also records the initial migration, so a later move
 // to Wrangler does not try to create the same tables a second time.
-const initial = await readFile(resolve(root, 'migrations/0001_initial.sql'), 'utf8');
+const migrationNames = (await readdir(resolve(root, 'migrations'))).filter(name => /^\d+_.+\.sql$/.test(name)).sort();
+const initial = (await Promise.all(migrationNames.map(name => readFile(resolve(root, 'migrations', name), 'utf8')))).join('\n');
 const tracking = `
 -- Wrangler migration metadata: only run after ALL statements above succeed.
 CREATE TABLE IF NOT EXISTS d1_migrations (
@@ -53,7 +54,7 @@ CREATE TABLE IF NOT EXISTS d1_migrations (
   name TEXT UNIQUE,
   applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
-INSERT INTO d1_migrations (name) VALUES ('0001_initial.sql');
+INSERT INTO d1_migrations (name) VALUES ${migrationNames.map(name => "('" + name.replaceAll("'", "''") + "')").join(', ')};
 `;
 await writeFile(resolve(output, 'schema.sql'), projectLicense.split('\n').map(line => '-- ' + line).join('\n') + '\n-- For a NEW, EMPTY D1 database only. Do not re-run on an existing database.\n' + initial + tracking);
 const sums = [];

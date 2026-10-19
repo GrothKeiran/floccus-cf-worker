@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database;
   ADMIN_TOKEN: string;
   TOKEN_PEPPER: string;
+  BOOTSTRAP_USERNAME?: string;
+  BOOTSTRAP_PASSWORD?: string;
   ALLOW_REGISTRATION?: string;
   ALLOW_INSECURE_LOCALHOST?: string;
   MAX_BODY_BYTES?: string;

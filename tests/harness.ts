@@ -1,21 +1,23 @@
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { build } from 'esbuild';
-import { readFile, mkdir, rm } from 'node:fs/promises';
+import { readFile, readdir, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 export const ADMIN = 'test-admin-' + 'a'.repeat(64);
 export const PASSWORD = 'A-long-test-password-2026!';
-export async function harness() {
+export async function harness(bindings: Record<string, string> = {}) {
   await mkdir('.cache/build', { recursive: true });
   await build({ entryPoints: ['src/index.ts'], bundle: true, format: 'esm', platform: 'browser', external: ['node:*'], target: 'es2022', outfile: '.cache/build/worker.mjs' });
   const persistRoot = resolve('.cache/miniflare', crypto.randomUUID());
   const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath: resolve('.cache/build/worker.mjs'),
     compatibilityDate: '2026-10-18', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
-    bindings: { ADMIN_TOKEN: ADMIN, TOKEN_PEPPER: 'test-pepper-' + 'b'.repeat(64), ALLOW_REGISTRATION: 'false', ALLOW_INSECURE_LOCALHOST: 'true' },
+    bindings: { ADMIN_TOKEN: ADMIN, TOKEN_PEPPER: 'test-pepper-' + 'b'.repeat(64), ALLOW_REGISTRATION: 'false', ALLOW_INSECURE_LOCALHOST: 'true', ...bindings },
     defaultPersistRoot: persistRoot,
   }));
   const db = await mf.getD1Database('DB');
-  const migration = await readFile('migrations/0001_initial.sql', 'utf8');
-  for (const sql of migration.split(';').map(s => s.trim()).filter(Boolean)) await db.prepare(sql).run();
+  for (const name of (await readdir('migrations')).filter(name => /^\d+_.+\.sql$/.test(name)).sort()) {
+    const migration = await readFile('migrations/' + name, 'utf8');
+    for (const sql of migration.split(';').map(s => s.trim()).filter(Boolean)) await db.prepare(sql).run();
+  }
   const trace: { method: string; path: string; status: number }[] = [];
   async function request(path: string, method = 'GET', body?: string, auth?: string, headers: Record<string, string> = {}) {
     const res = await mf.dispatchFetch('https://sync.test' + path, {

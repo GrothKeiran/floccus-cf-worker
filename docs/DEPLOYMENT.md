@@ -24,6 +24,8 @@
 |---|---|---|
 | `ADMIN_TOKEN` | 无 | Secret，建号与密码恢复，推荐随机 32 bytes |
 | `TOKEN_PEPPER` | 无 | 独立 Secret，为随机凭证/限流键生成 HMAC |
+| `BOOTSTRAP_USERNAME` | 无 | 可选初始用户名，只对新空库生效 |
+| `BOOTSTRAP_PASSWORD` | 无 | 可选 Secret，初始账户强密码，14～256字符；成功建号后可移除 |
 | `ALLOW_REGISTRATION` | false | 自助注册开关，无邮箱验证；不建议公开开启 |
 | `ALLOW_INSECURE_LOCALHOST` | true | 只限回环域名开发 HTTP |
 | `MAX_BODY_BYTES` | 524288 | XBEL 输入字节限制，硬上限 1,000,000 |
@@ -116,6 +118,8 @@ npm run deploy
 可选 [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) 受套餐与保留窗口约束，不代替独立导出。恢复旧状态同样涉及凭证复活和设备缓存冲突。
 
 ## 升级与迁移失败
+
+v0.1.0 升级到网页管理版本 v0.2.0，先看[专用升级步骤](UPGRADE-0.2.md)，只应用新增迁移，不重复初始化旧库。
 
 1. 发布前运行 `npm ci && npm run check`；阅读变更日志及协议基线，不直接跟随上游 main。
 2. 暂停同步，在维护窗口备份 D1 和部署配置。

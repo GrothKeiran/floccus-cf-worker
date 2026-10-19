@@ -7,6 +7,8 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 [vars]
+# Optional: uncomment only for a fresh database, then set BOOTSTRAP_PASSWORD as a Secret.
+# BOOTSTRAP_USERNAME = "owner"
 ALLOW_REGISTRATION = "false"
 # Only enables HTTP for localhost/127.0.0.1/::1, never for public hosts.
 ALLOW_INSECURE_LOCALHOST = "true"

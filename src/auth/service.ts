@@ -52,6 +52,14 @@ export async function issueCredential(env: Env, userId: string, kind: 'session' 
   }
   return { id, token, expiresAt };
 }
+export function accountStatements(env: Env, id: string, username: string, hash: string, now: number, event: 'account_created' | 'bootstrap_completed' = 'account_created'): D1PreparedStatement[] {
+  return [
+    env.DB.prepare('INSERT INTO users(id,username,password_hash,created_at) VALUES(?,?,?,?)').bind(id, username, hash, now),
+    env.DB.prepare('INSERT INTO sync_state(user_id,updated_at) VALUES(?,?)').bind(id, now),
+    env.DB.prepare(`INSERT INTO nodes(user_id,node_id,parent_id,type,title,url,position,created_at,updated_at,version) VALUES(?,0,NULL,'folder','root',NULL,0,?,?,0)`).bind(id, now, now),
+    env.DB.prepare('INSERT INTO audit_logs(user_id,event,created_at) VALUES(?,?,?)').bind(id, event, now),
+  ];
+}
 async function createUser(req: Request, env: Env): Promise<Response> {
   const body = await jsonBody(req);
   const username = String(body.username ?? '').toLowerCase();
@@ -59,12 +67,7 @@ async function createUser(req: Request, env: Env): Promise<Response> {
   const hash = await hashPassword(body.password as string);
   const id = crypto.randomUUID(); const now = Date.now();
   try {
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO users(id,username,password_hash,created_at) VALUES(?,?,?,?)').bind(id, username, hash, now),
-      env.DB.prepare('INSERT INTO sync_state(user_id,updated_at) VALUES(?,?)').bind(id, now),
-      env.DB.prepare(`INSERT INTO nodes(user_id,node_id,parent_id,type,title,url,position,created_at,updated_at,version) VALUES(?,0,NULL,'folder','root',NULL,0,?,?,0)`).bind(id, now, now),
-      env.DB.prepare("INSERT INTO audit_logs(user_id,event,created_at) VALUES(?,'account_created',?)").bind(id, now),
-    ]);
+    await env.DB.batch(accountStatements(env, id, username, hash, now));
   } catch (e) {
     if (String(e).includes('UNIQUE constraint failed: users.username')) fail(409, 'username_unavailable');
     throw e;

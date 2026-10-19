@@ -109,3 +109,11 @@ HTTP 请求可在不同 Worker 实例并发，D1 事务提供数据库级保护�
 | POST `/api/admin/reset-password` | ADMIN_TOKEN Bearer | JSON username/password；撤销该用户所有 session/device 和锁 |
 
 JSON 接口必须 `Content-Type: application/json`，最大 8 KiB，不使用 Cookie。错误为 `{error:机器可读代码}`；无效认证 401，权限 403，格式 400/415/422，体积 413，锁 423，冲突 412，限流 429 + Retry-After。错误不回显 SQL、原始认证头或密码。
+
+## 网页初始化与管理路由（v0.2.0）
+
+- GET `/`：跳转 `/admin`；GET/HEAD `/admin`、`/admin/`、`/admin/app.js`、`/admin/app.css` 提供同源静态管理页与资源。
+- GET `/api/setup/status`：返回 `initialized`、`bootstrapConfigured` 布尔值，不返回初始用户名、密码、用户列表或 Token。
+- POST `/api/setup`：JSON `username`、`password` 必须匹配配置的初始凭证；只允许空库且未完成过初始化，成功 201、已初始化 409、未配置 503、凭证不匹配 401。
+- `bootstrap_state` 单例记录永久保存完成标记，删除账号仅将关联 user_id 设为 NULL；初始化与用户/根节点/同步状态/审计在同一事务中完成。
+- 管理页复用既有 login、me、devices、export、logout API，无 Cookie 登录旁路，无直接 D1 浏览器访问。

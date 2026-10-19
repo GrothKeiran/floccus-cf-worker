@@ -39,11 +39,13 @@ export function numberConfig(value: string | undefined, fallback: number, max: n
   const n = Number(value ?? fallback);
   return Number.isSafeInteger(n) && n > 0 ? Math.min(n, max) : fallback;
 }
-export function securityHeaders(response: Response): Response {
+export function securityHeaders(response: Response, adminPage = false): Response {
   const headers = new Headers(response.headers);
   headers.set('Cache-Control', 'no-store');
   headers.set('X-Content-Type-Options', 'nosniff');
-  headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  headers.set('Content-Security-Policy', adminPage
+    ? "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    : "default-src 'none'; frame-ancestors 'none'");
   headers.set('Referrer-Policy', 'no-referrer');
   headers.set('Strict-Transport-Security', 'max-age=31536000');
   return new Response(response.body, { status: response.status, headers });

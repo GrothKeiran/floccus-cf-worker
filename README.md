@@ -40,29 +40,35 @@ npm run deploy
 2. 在 Cloudflare 创建一个新的 D1 数据库，在 **Console** 执行 `schema.sql`。
 3. 创建一个 **Hello World Worker**；兼容日期设为 `2026-10-18` 或更新，并启用 **`nodejs_compat`**。
 4. 给 Worker 添加 **D1 database 绑定**：变量名必须为 **`DB`**，选择刚创建的数据库。
-5. 添加下面列出的两个 Secret 和四个普通变量。
+5. 添加两个基础 Secret 和普通变量；首次建号再设置 `BOOTSTRAP_USERNAME` 和 Secret 类型的 `BOOTSTRAP_PASSWORD`。
 6. 在代码编辑器中用 `worker.mjs` 的全部内容替换示例代码，保存并部署。
-7. 访问 `/health/ready`，然后[创建同步账户和每设备应用密码](docs/ACCOUNTS.md)。
+7. 访问自己的 `/admin`，输入刚配置的初始账号密码，点击“初始化并登录”，然后在网页中为每个浏览器生成应用密码。**无需终端或手工插入 D1 账号记录。**
 
 完整逐步说明、变量类型、定时清理和注意事项见[方式二完整教程](docs/DEPLOY-DASHBOARD.md)。预打包文件已经包含依赖，**不能直接把 `src/index.ts` 粘贴到控制台，也不需要自己在控制台安装 npm 包**。
 
-## 必须配置的绑定与环境变量
+## 绑定与环境变量配置
 
 | 名称 | 类型 | 值 / 作用 |
 |---|---|---|
 | `DB` | **D1 数据库绑定** | 选择自己的 D1 数据库；不是普通文本变量 |
 | `ADMIN_TOKEN` | **Secret** | 独立强随机字符串，至少 32 字符；管理员建号、恢复密码 |
 | `TOKEN_PEPPER` | **Secret** | 另一份独立强随机字符串，至少 32 字符；凭证摘要密钥 |
+| `BOOTSTRAP_USERNAME` | 文本，首次建号可选 | 初始用户名，例如 `owner`；仅用于新空库初始化 |
+| `BOOTSTRAP_PASSWORD` | **Secret**，与上项配套 | 自己设置的强账户密码，14～256 字符；不是 Floccus 设备密码 |
 | `ALLOW_REGISTRATION` | 文本 | `false`，默认关闭公开注册 |
 | `ALLOW_INSECURE_LOCALHOST` | 文本 | 控制台生产部署填 `false`；本地 HTTP 开发才设 `true` |
 | `MAX_BODY_BYTES` | 文本 | `524288`，每份 XBEL 最大 512 KiB |
 | `MAX_NODES` | 文本 | `5000`，书签和文件夹数量合计上限 |
 
-Secrets 推荐各自生成 **32 个随机字节、编码为 64 个十六进制字符**，不能使用示例占位值。不要把它们填进 Floccus、写进源码，或发布到 GitHub。
+`ADMIN_TOKEN` 和 `TOKEN_PEPPER` 推荐各自生成 **32 个随机字节、编码为 64 个十六进制字符**，不能使用示例占位值。`BOOTSTRAP_PASSWORD` 是自己的强账户口令。不要把上述 Secret 填进 Floccus、写进源码或发布到 GitHub。
 
 ## 创建账户，再配置 Floccus
 
-Worker 没有预置账号，也没有网页版管理面板。部署后使用[账户管理教程](docs/ACCOUNTS.md)建号、登录并为每个浏览器签发应用密码；该教程同时提供项目 CLI 和 Windows PowerShell 方法。
+**从 v0.2.0 起内置 `/admin` 网页管理页面。** 新空库先在 Cloudflare 设置 `BOOTSTRAP_USERNAME` 和 `BOOTSTRAP_PASSWORD`，再到网页输入同一组账号密码，“初始化并登录”会自动建号。登录后可生成/撤销每设备应用密码、查看设备列表、导出备份和退出。详情见[账户管理教程](docs/ACCOUNTS.md)，CLI / PowerShell 仍可选用。
+
+初始化只允许新空数据库且仅一次，已有用户不受环境变量覆盖；初始化账号删除后也不会自动重建。成功后可移除这两个初始变量，账号继续使用 D1 中的密码哈希登录。**修改初始变量不是重置密码功能。**
+
+已有 v0.1.0 部署者先应用 `0002_bootstrap.sql` 再更新 Worker，保留原账号和设备密码，不要重跑整份初始化 SQL。[升级步骤](docs/UPGRADE-0.2.md)
 
 | Floccus 配置项 | 填写内容 |
 |---|---|
@@ -95,6 +101,7 @@ Worker 没有预置账号，也没有网页版管理面板。部署后使用[账
 npm ci
 cp wrangler.example.toml wrangler.toml  # 已有配置时不要覆盖
 npm run typecheck
+npm run test:bootstrap  # 仅网页初始化/设备凭证相关的针对性测试
 npm run check
 ```
 
@@ -124,7 +131,7 @@ npm run build:dashboard
 ## 项目结构与更多文档
 
 ```text
-src/                       Worker、认证、WebDAV、XBEL 与 D1 事务
+src/                       网页管理、一次性建号、认证、WebDAV、XBEL 与 D1 事务
 migrations/                数据库迁移
 scripts/                   CLI、项目内缓存与发布包构建
 tests/                     服务、协议和真实上游同步引擎测试
@@ -133,7 +140,7 @@ wrangler.example.toml      可公开的部署配置模板
 ```
 
 - [Wrangler 部署](docs/DEPLOY-WRANGLER.md) / [控制台部署](docs/DEPLOY-DASHBOARD.md)
-- [账户和设备凭证](docs/ACCOUNTS.md) / [Floccus 配置](docs/FLOCCUS.md)
+- [账户和设备凭证](docs/ACCOUNTS.md) / [Floccus 配置](docs/FLOCCUS.md) / [升级到 v0.2.0](docs/UPGRADE-0.2.md)
 - [额度、备份、恢复和升级](docs/DEPLOYMENT.md)
 - [协议调研](docs/RESEARCH.md) / [协议与数据模型](docs/PROTOCOL.md)
 - [安全与故障排查](docs/SECURITY.md) / [验证记录](docs/VALIDATION.md)

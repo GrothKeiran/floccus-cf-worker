@@ -115,11 +115,13 @@ npm run deploy
 {"status":"ready"}
 ```
 
-它只证明必要 Secrets 和数据库初始表可用，不能替代真实 Floccus 同步。根路径 `/` 返回 404 是正常的，本项目没有首页。
+它只证明必要 Secrets 和数据库初始表可用，不能替代真实 Floccus 同步。根路径 `/` 会跳转到 `/admin` 网页管理页面。
 
 ## 7. 创建账户、配置扩展
 
-继续阅读[账户与设备应用密码](ACCOUNTS.md)，之后按 [Floccus 配置](FLOCCUS.md)填写。每个浏览器签发不同应用密码；第一次先同步一台，再接入下一台。
+新空库可在本地 `wrangler.toml` 的 `[vars]` 中启用 `BOOTSTRAP_USERNAME = "owner"`，再运行 `node scripts/run.mjs wrangler secret put BOOTSTRAP_PASSWORD` 设置至少14字符的强账户密码，重新 `npm run deploy`。然后访问自己的 `/admin`，输入同一组账号密码，“初始化并登录”会自动建号，之后在网页为每台浏览器生成独立应用密码。
+
+已有用户直接登录，初始环境变量不会覆盖已有账号。首次初始化成功后可移除初始 Secret 和用户名。继续阅读[账户与设备应用密码](ACCOUNTS.md)，CLI 仍可选用。第一次先同步一台，再接入下一台。
 
 ## 参考与后续维护
 
