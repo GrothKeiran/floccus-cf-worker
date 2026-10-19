@@ -1,0 +1,41 @@
+name: dashboard-release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build, for example v0.1.0'
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache/xdg
+      TMPDIR: ${{ github.workspace }}/.cache/tmp
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - run: mkdir -p .cache/tmp .cache/npm .cache/xdg
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build:dashboard
+      - name: Publish dashboard assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes
+          gh release upload "$RELEASE_TAG" \
+            .cache/dashboard/worker.mjs .cache/dashboard/schema.sql \
+            .cache/dashboard/SHA256SUMS .cache/dashboard/THIRD_PARTY_LICENSES.txt --clobber

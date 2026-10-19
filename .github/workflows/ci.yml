@@ -1,0 +1,24 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache/xdg
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.cache/config
+      TMPDIR: ${{ github.workspace }}/.cache/tmp
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p .cache/tmp .cache/npm .cache/config .cache/xdg
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: cp wrangler.example.toml wrangler.toml
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:dashboard
+      - run: npm audit --audit-level=high

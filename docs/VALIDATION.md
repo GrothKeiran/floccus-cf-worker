@@ -1,0 +1,123 @@
+# 验证记录
+
+## 2026-10-18 生产部署收尾
+
+- Wrangler 路线已实际部署至 Cloudflare；D1 绑定 `DB`，远端初始迁移已完成。公开文档不包含部署者的域名、账号、数据库 ID 或凭证。
+- 线上 PBKDF2 600,000 次被平台拒绝，改用已确认受支持的原生 scrypt（N=16384/r=8/p=5），临时诊断路由已移除。
+- 本次 TypeScript 类型检查通过；真实管理员建号返回 201、登录 200、签发设备应用密码 201。
+- 按用户要求不重复整套回归或大规模线上协议验收；下文 24 项是此前本地基线，不是本次改动后的全量测试结果。真实 Floccus 浏览器同步仍由用户首次配置后使用，不能据 ready 或建号成功声称已完成跨设备验收。
+
+
+日期：2026-10-18。记录的是本工作区实际执行结果，不是未来部署承诺。
+
+## 工具/基线
+
+- Node.js v24.21.0，npm 12.2.0。
+- TypeScript 5.9.3，Vitest 5.0.5，Wrangler 4.151.1。
+- 最终集成测试固定 Miniflare 5.20261012.1-beta / workerd 1.20261012.1，与 Wrangler 使用同一运行时版本；全部采用项目 compatibility_date 2026-10-18。测试通过官方 convertV4MiniflareOptions 兼容入口构造本地环境。
+- 固定 Floccus 5.11.1，提交 `c8ec55ee5e731206c6f2b34c48e8b4def47d0d5a`，Git tracked 文件无修改。
+- 依赖精确版本和平台包保存在 package-lock.json；重新执行过 `npm ci` 后再做完整验收。npm 12 提示未批准 esbuild/workerd 安装脚本，本环境通过已安装的架构可执行包实际成功运行；不能将该提示理解为已经执行这些被阻止的脚本。
+
+## 自动化验收
+
+实际执行：
+
+```bash
+npm ci
+npm run check
+```
+
+`check` 最终结果：
+
+- `tsc --noEmit`：成功。
+- **3 个测试文件、24 项测试全部通过**；最后一次测试耗时约 17 秒，性能仅代表当前开发机。
+- Wrangler `deploy --dry-run`：成功；绑定 `DB (floccus-bookmarks)`；上传估算 **176.39 KiB / gzip 45.95 KiB**。dry-run 不会部署线上，也不验证真实 D1 UUID/账号权限/远端配额。
+
+另实际执行 `npm audit --omit=dev --json` 与完整 `npm audit --json`：生产与全依赖最终都报告 **0 个已知漏洞**。此前审计发现旧版测试 Miniflare 经 sharp/undici 受到高危公告影响，已改为 Wrangler 同版本依赖并重跑完整测试；没有使用不安全的自动降级修复建议。该结果仅限查询时 npm advisory 数据，不代表不存在未知漏洞。原始报告在 `.cache/audit-production.json`、`.cache/audit-all.json`。
+
+本工作区可检查 `.cache/final-check.log`。真实适配器测试另输出 `.cache/protocol-trace.json`，只包含合成测试书签、方法、路径和状态，不含 Authorization 或应用密码；该文件是每次测试重新产生的，不用旧截图冒充结果。
+
+### tests/service.test.ts：18 项
+
+- 健康/就绪、HTTPS、默认关闭注册、管理员权限。
+- 早期基线中的 PBKDF2 600,000 曾在本地 workerd 执行，但线上平台不支持；当前使用 scrypt，历史结果不能当作当前完整认证回归。错误密码及管理密码不可用于 DAV 的历史断言见测试。
+- 会话超期/注销、设备撤销、原子活跃凭证数上限。
+- 首次全量同步、中文 UTF-8 字节数、HEAD、PROPFIND、ETag 条件请求。
+- 后续完整快照表达编辑/移动/重命名/排序，创建时间不变。
+- 临时上传与正式文档隔离、MOVE 提交、重复 MOVE 不增加版本。
+- 两设备同时抢锁一胜一负；非持有者不可写/释放。
+- 两分钟续租、同凭证短间隔抢锁拒绝、过期后新 generation 隔离旧 .temp。
+- 文件夹子树删除产生墓碑，旧 ID 复活被拒绝，事务 guard 无泄漏。
+- 多用户隔离、非法/重复 ID、循环式层级、书签作为父节点、恶意 URL、XXE。
+- 无效 JSON、超大正文、错误 If-Match、跨域 MOVE、禁止删除正式文件。
+- **1,200 条书签实际导入**，后续全量更新一个节点，只有变动节点取得新节点版本。
+- D1 batch 先 UPDATE、再故意 CHECK 失败，确认此前写入真实回滚。
+- 过期租约拒绝提交，版本不匹配拒绝旧 staging。
+- 导出含墓碑、账号删除级联清除、管理员恢复撤销全部凭证、密码验证限流。
+
+### tests/upstream.test.ts：3 项，包含多个真实同步阶段
+
+不是只手工重写一个“Floccus 类似客户端”。测试编译并执行**真实上游**：
+
+- `WebDav.ts` 发送 HTTP 请求；官方 `Xbel.ts`、`Tree.ts`、`Caching.ts` 负责序列化、读写、ID 和排序。
+- `Mappings.ts`、`Scanner.ts`、`Diff.ts`、`strategies/Merge.ts`、`strategies/Default.ts` 负责双向合并和删除判断。
+
+场景：
+1. 官方适配器首次创建文件夹/书签、PUT .temp、PROPFIND 字节检查、MOVE；另一个适配器读取后修改和排序；第一个适配器看到变化并删除；无变化同步不上传。
+2. 真实适配器锁冲突；MOVE 前连接中断不改变正式状态；再次同步成功；MOVE 已成功但响应丢失时再次读取只出现一次新增节点。
+3. 使用官方 Merge/Default，保留每台模拟设备自己的缓存/mappings：Chrome 模型初次上传，Firefox 模型首次合并；同一书签在两端离线改动，顺序同步后依照官方本地优先策略收敛；继续验证文件夹改名、书签移动、书签删除及文件夹删除向另一端传播。
+
+**替身范围**：浏览器权限/storage 宿主、日志、没有走到的原生 HTTP/HTML/Nextcloud 分支；本地浏览器树为内存 CachingAdapter 模型。没有替换实际 WebDAV 请求构造、XBEL 序列化或 Merge/Default 算法。源码未打补丁，生产 Worker 不打包 Floccus。
+
+因此它证明“目标源码真实请求/响应及同步语义与本服务兼容”，**不等同于已经在用户真实 Chrome/Edge/Firefox 的扩展 UI/权限系统上验收**。
+
+### tests/xbel.test.ts：3 项
+
+官方缩进/实体/空标题/顺序；节点和深度限制、缺 ID/根 ID/注释约束；脚本/数据/file/内部 URL/嵌入凭证、实体声明和损坏 XML 拒绝。
+
+## 实际 Wrangler 本地服务
+
+已执行而非仅编译：
+
+1. `npm run db:local`：迁移 `0001_initial.sql`，16 条 SQL 命令成功。
+2. `npm run dev`：使用实际本地 D1 binding 启动 Worker。
+3. `/health` 和 `/health/ready` 返回预期 JSON。
+4. 管理 CLI 实际创建 `smoke-validation`、登录、`me`、创建设备凭证。
+5. 实际 HTTP：PUT .lock **201** → PUT .temp **201** → PROPFIND .temp **207** → MOVE **204** → GET **200**（逐字节相等）→ DELETE .lock **204**。
+6. CLI 实际导出 JSON/XBEL，然后确认删除测试账号。
+7. Wrangler 本地 `/cdn-cgi/local/scheduled` 手动触发返回 **200 / ok**。此记录证明 handler 可运行，不冒充已经在 Cloudflare 定时执行。
+8. 本地开发服务已经停止，未留下向网络开放的 Wrangler Explorer。实际本地 .dev.vars 随机生成并 gitignore，测试账号已删除。
+
+## 安全工具边界
+
+按照项目规则尝试使用 Kali MCP 与 mitmproxy-mcp：Kali 健康检查成功，独立端口代理启动成功；Kali 到本地开发容器私网地址的 HTTP 连接 **10 秒超时**，无法进行该链路的远端抓包/攻击验证，随后已停止代理。
+
+不能把工具启动成功、超时或者没有抓到流量解释为“没有漏洞”或“渗透测试通过”。安全方面已实际验证的是上述 workerd/D1 自动化回归；线上独立渗透测试、真实代理全链路尚未完成。
+
+## 明确未验证
+
+- 控制台路线使用同源打包 Worker 与相同初始 SQL，并保留 Wrangler 迁移元数据；尚未在另一个全新账号逐项点击验收，不冒充已完成该路线实机验证。
+- 没有用户真实浏览器扩展 UI 操作、浏览器商店发行版本校验、Edge/Firefox 权限差异或跨设备网络实机验收。
+- 没有手机端 Capacitor/native HTTP、HTML、加密 XBEL、Nextcloud API、多个文件/通用 WebDAV 的兼容性结论。
+- 没有 Cloudflare 免费套餐线上 CPU/费用实测，不保证 5,000 节点上限负载或全部建号/登录在 Free 10 ms CPU 下运行。
+- 没有线上备份导入、Time Travel、切库、故障注入或跨区域可用性演练。
+- 没有独立外部安全审计或远端 Kali/mitmproxy 成功覆盖的结论。
+
+## 部署后的人工验收清单
+
+- [x] 在用户 Cloudflare 账号创建 D1/Secrets，迁移并部署；用户手动访问 ready 成功。
+- [ ] Chrome 选原生书签栏，初次保留原有数据双向合并；核对中文/排序/子目录。
+- [ ] Edge、Firefox 选择各自原生收藏夹/书签工具栏，使用独立应用密码。
+- [ ] 三端测试新增/编辑/改名/移动/重排/删除往返，验证自动同步。
+- [ ] 两端断网修改同一书签，再顺序上线，核对冲突策略与无静默丢失。
+- [ ] 同时同步碰锁后能恢复；撤销一个设备后其他设备继续正常。
+- [ ] 查看 CPU/D1 行读写、免费额度与预算，控制大导入/注册开关。
+- [ ] 在独立恢复库演练全库导出、导入、凭证撤销和版本切换；保留原库直到确认。
+
+## 2026-10-19 公开发布整理
+
+- 已补充 Wrangler 与 Dashboard 两套部署文档，后者明确区分页面资源配置与后续 API 建号。
+- 当前 TypeScript 类型检查和控制台 bundle 构建通过；生成的模块通过 Node 语法检查。
+- 配套 schema.sql 在内存空 SQLite 中成功初始化，迁移记录与外键检查通过；这不是第二个远端 D1 的部署验收。
+- 发布附件内嵌完整项目/第三方许可，并附 SHA-256；真实生产配置、凭证、缓存和备份不进入 Git。
+- 本次不重复执行完整同步回归；GitHub CI 将按仓库工作流执行独立检查，结果以实际工作流为准。

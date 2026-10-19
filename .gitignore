@@ -1,0 +1,20 @@
+node_modules/
+.cache/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+coverage/
+dist/
+backups/
+wrangler.local.jsonc
+# Deployment-specific identifiers stay local; publish the portable template.
+/wrangler.toml
+/wrangler.production.*
+*.har
+*.flow
+*.mitm
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

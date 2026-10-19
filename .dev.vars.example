@@ -1,0 +1,3 @@
+# Generate independently: openssl rand -hex 32. Copy to .dev.vars; never commit real values.
+ADMIN_TOKEN=replace-with-at-least-32-random-characters
+TOKEN_PEPPER=replace-with-an-independent-32-character-secret

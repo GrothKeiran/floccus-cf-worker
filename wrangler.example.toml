@@ -1,0 +1,27 @@
+# Copy to wrangler.toml before local development or Wrangler deployment.
+# Keep your actual account_id/database_id in the ignored wrangler.toml only.
+name = "floccus-cf-worker"
+main = "src/index.ts"
+compatibility_date = "2026-10-18"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+ALLOW_REGISTRATION = "false"
+# Only enables HTTP for localhost/127.0.0.1/::1, never for public hosts.
+ALLOW_INSECURE_LOCALHOST = "true"
+MAX_BODY_BYTES = "524288"
+MAX_NODES = "5000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "floccus-bookmarks"
+# Local-only placeholder. npm run configure replaces this for production.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["17 3 * * *"]
+
+[observability]
+enabled = false

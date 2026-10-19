@@ -1,0 +1,111 @@
+# 协议、模型与一致性
+
+## 协议边界
+
+URL 根为 `/dav/`。**每个认证用户只有一个文件**，不存在以 URL 的 user_id 决定权限的接口。实际 user_id 只来自已验证的设备凭证。
+
+| 资源 | 方法 | 行为 |
+|---|---|---|
+| `/dav/` | OPTIONS、PROPFIND | DAV 1 子集；深度 0/1，禁止无限递归 |
+| `/dav/bookmarks.xbel` | GET、HEAD、PROPFIND | 原样返回 XML、真实 UTF-8 字节数、SHA256 ETag、Last-Modified；首次不存在 404 |
+| 同上 | PUT | 原生客户端兼容分支；必须持锁，验证整棵树后原子替换 |
+| `.xbel.lock` | GET、HEAD、PROPFIND、PUT、DELETE | 获取锁状态、原子抢锁/续租、仅持有者释放 |
+| `.xbel.temp` | PUT、GET、HEAD、PROPFIND、DELETE | 仅当前租约/凭证可见，不影响正式文件 |
+| `.xbel.temp` | MOVE | Destination 必须为同源正式文件；将临时文件原子提交 |
+| 正式 `.xbel` | DELETE | 405；请通过快照表达删除节点，或显式删除整个账号 |
+
+不支持 MKCOL、COPY、通用路径、子目录、客户端选择多个文件、HTTP DAV LOCK/UNLOCK。拒绝未知文件，不会创建随意名称的数据。
+
+服务器对该协议不发跨源重定向，不伪造 Nextcloud/OCS API。生产 Basic 仅通过 HTTPS。HTTP 只在配置允许的 loopback 地址接受。
+
+## 真实同步序列
+
+```text
+GET   bookmarks.xbel.lock                    404（或锁存在则等待）
+PUT   bookmarks.xbel.lock                    201；D1 原子抢锁
+GET   bookmarks.xbel                         404 或 200
+PROPFIND bookmarks.xbel, Depth:0             207；已有文件时校验实际字节数
+[Floccus 比较本地、上次缓存及远端；在客户端计算并应用差异]
+PUT   bookmarks.xbel.temp                    201；仍不改变正式数据
+PROPFIND bookmarks.xbel.temp, Depth:0        207
+MOVE  bookmarks.xbel.temp                    204；Destination: https://同源/dav/bookmarks.xbel
+PROPFIND bookmarks.xbel, Depth:0             207
+DELETE bookmarks.xbel.lock                   204
+```
+
+树未改变时跳过上传和 MOVE。每次同步仍会读取全文件，不存在服务端增量游标。原生应用分支直接 PUT 正式文件；本项目实现该分支，但未对 Floccus 手机原生 HTTP 运行时做实机验证。
+
+## XBEL 数据契约
+
+- 必须是 Floccus XBEL XML 声明和单一 `<xbel>` 根。
+- 保留实际 Floccus 生成的 `highestId` 注释，只能单调不减，节点 ID 为正的安全整数；0 是服务器合成根。
+- `folder`、`bookmark` 嵌套关系确定 parent；同层出现顺序确定 position，不根据标题或时间重新排序。
+- `title` 第一个结构子元素；`href` 保存 URL；支持中文、实体转义和官方格式化缩进。
+- 单个 ID 不可重复、不可自引用、不可把书签当父级；JSON API 不接受自定义 parent_id。树结构天然不能引用不存在的父级。
+- 根 ID 不等于浏览器本地 ID；Floccus mappings 负责此对应关系。
+- 固定的官方公共 DTD 声明只是兼容头部，**不会请求该 URL**。拒绝其他 DTD、内部子集、实体声明、XML 样式指令、CDATA、未知结构元素。生产 Worker 不会抓取 URL 或执行书签。
+- 每次上传保存原始 XML；节点关系存入 D1 便于约束、导出和保留删除状态。不会通过重新序列化改变官方文件的字节数。
+
+## 数据模型
+
+- `users`：用户名（ASCII、不区分大小写）、带独立盐的密码哈希。
+- `credentials`：管理 session / device 应用密码的 HMAC 摘要、标签、有效期；从不保存令牌原文。每账号上限 50 个活跃凭证；过期 session 由定时器清理。
+- `sync_state`：最新完整文档、SHA256 ETag、版本、highest_id。没有伪称提供历史快照检索功能。
+- `nodes`：复合主键 `(user_id,node_id)`；节点类型、parent_id、position、created_at/updated_at、版本、deleted。
+- `sync_locks`：每用户一行，凭证持有者、随机 generation、base_version、更新时间、过期时间。
+- `staging`：绑定用户/凭证/generation/base_version 的临时上传。提交后暂留以支持响应丢失后的同内容 MOVE 重试，释放锁时移除。
+- `transaction_guards`：D1 batch 内验证前置条件的临时 CHECK 行，成功后同 batch 删除，不是分布式进程锁。
+- `audit_logs`：事件枚举、用户 ID、时间，不含正文和秘密，保留 30 天。
+- `rate_limits`：HMAC 处理的限流键、固定窗口计数；每日清理旧窗口。
+
+`nodes` 父子外键同时包含 user_id，延迟到事务结束检查，可在单次批量操作移动整棵树。根记录始终保留。索引覆盖认证 token、用户凭证、父目录顺序、版本、审计时间和限流窗口。
+
+## D1 原子提交
+
+不使用 SQL `BEGIN` 长事务，不把 D1 当本机 SQLite 文件打开。所有持久访问使用 `env.DB.prepare().bind()`；批事务使用官方 `env.DB.batch()`。
+
+提交的一个 batch：
+1. CHECK guard 验证凭证仍存在、租约所有者/generation/有效期和 base_version 与当前版本匹配。
+2. 另一 guard 验证没有被删除 ID 复活、没有更改现有节点类型。
+3. 不再出现的节点标记 deleted，版本推进；不存在物理删除节点后复用 ID。
+4. 利用 `json_each` 单次 upsert 全部节点；未改变的节点不写新版本，原始创建时间保持。父级、排序、标题、URL 各自比较，非简单时间戳覆盖。
+5. 保存原始快照、ETag、单调 highestId 和新版本；推进当前租约的 base_version；记安全审计事件。
+6. 清理 guard。任意错误使 **整个 batch 回滚**。
+
+HTTP 请求可在不同 Worker 实例并发，D1 事务提供数据库级保护；不依赖 JS isolate 内存锁、全局 Map 或 sticky session。不开启 D1 read replica/session 时默认主库读取，避免租约判断读取陈旧副本。
+
+## 冲突、重试与删除
+
+- **客户端冲突策略**：使用目标 Floccus 的 Merge/Default 策略。首次是并集式合并，有基线的后续同步区分节点新增/更新/移动/删除/重排。Default 的同字段冲突本地端优先；不是承诺“更晚时间戳胜出”。两个设备离线改同节点，按持锁同步顺序及各自基线执行该策略。
+- **服务端并发策略**：一个用户同时只有一台设备提交。租约默认 15 分钟，每 2 分钟由官方适配器刷新。未持锁、其他设备写入或释放返回 423；版本或墓碑冲突返回 412。
+- 不用 409 表达 MOVE 版本冲突：官方适配器会尝试删目标再重试，本项目不能让该兼容分支误删正式文件。
+- 同租约同文档的 PUT/MOVE 重放不会重复增长版本。`.temp` 未 MOVE 时连接中断不会改变正式树；MOVE 已成功但响应丢失，下一次同步可重新读取已提交结果。
+- 节点被删后保存墓碑，拒绝相同 ID 的重新出现。highest_id 不回退，新增不能碰撞旧 ID。
+- **不能承诺防止“语义复活”**：协议没有设备游标/删除确认。失去客户端缓存后，旧设备可能把同一 URL 当全新 ID 创建；服务器无法区分“用户确实重新收藏”与“过期客户端重建”。不能靠虚构字段修复。请保持 Floccus 缓存，暂停失去基线的设备并人工核对。
+- 回滚数据库、手工覆盖文档、共享应用密码、使用“强制覆盖”策略属于另有风险的恢复操作；不是正常一致性保证范围。
+- 不自动清理墓碑或重用 ID；长期大量删除会增长存储，应监测容量。备份目前由用户/管理员发起，没有外部常驻服务。
+
+### 为什么每设备必须单独应用密码
+
+官方 `.lock` 文件请求不发送唯一设备 ID/租约 token，不能在不改扩展的前提下凭空获得它。服务器以 Basic 应用密码对应的 credential_id 标识持有者。
+
+同一凭证在 90 秒内重复 PUT 锁拒绝，之后允许官方定时续租；这降低瞬时误抢，但**无法区分 90 秒之后的同凭证另一个客户端**。因此独立应用密码是正确性的必要条件，不能说共享密码也严格安全。“强制获取锁”也不绕过其他设备当前租约；等租约过期或撤销对应设备凭证。
+
+## 管理 API
+
+全为独立 `/api/` API，**不是声称 Floccus 能自定义调用它们**：
+
+| 方法/路径 | 认证 | 请求/结果 |
+|---|---|---|
+| POST `/api/admin/users` | ADMIN_TOKEN Bearer | JSON username/password，201 id/username |
+| POST `/api/register` | 无 | 同上；仅 ALLOW_REGISTRATION=true 开启 |
+| POST `/api/login` | 密码 | JSON username/password；accessToken/expiresAt |
+| GET `/api/me` | session Bearer | 当前用户基本信息 |
+| POST `/api/logout` | session Bearer | 撤销当前 session |
+| POST/GET `/api/devices` | session Bearer | 创建 `{label}` / 列出；仅创建时返回 applicationPassword |
+| DELETE `/api/devices/ID` | session Bearer | 撤销自己的设备，跨用户 ID 不产生作用 |
+| GET `/api/export` | session Bearer | JSON 最新状态和节点/墓碑，不含 credentials/users 密码哈希 |
+| DELETE `/api/account` | session Bearer | JSON `{confirm:"DELETE"}`，全部个人数据级联清除 |
+| POST `/api/admin/reset-password` | ADMIN_TOKEN Bearer | JSON username/password；撤销该用户所有 session/device 和锁 |
+
+JSON 接口必须 `Content-Type: application/json`，最大 8 KiB，不使用 Cookie。错误为 `{error:机器可读代码}`；无效认证 401，权限 403，格式 400/415/422，体积 413，锁 423，冲突 412，限流 429 + Retry-After。错误不回显 SQL、原始认证头或密码。
