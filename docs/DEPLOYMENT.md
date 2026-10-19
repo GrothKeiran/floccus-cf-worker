@@ -4,34 +4,28 @@
 
 公开仓库只包含 `wrangler.example.toml`。Wrangler 操作前先复制为私有的 `wrangler.toml`，填自己的资源信息；控制台路线则在网页逐项配置，不读取 TOML。
 
-## 部署前检查
+## 当前最简部署（v0.3.0）
 
-1. 复制 `wrangler.example.toml` 为 `wrangler.toml`（已有配置不要覆盖），Node/npm 依赖使用锁文件，执行 `npm ci && npm run check`。此处 check 为本地类型/测试/构建，不会创建远端资源。
-2. 登录正确 Cloudflare 账号。`node scripts/run.mjs wrangler whoami` 核对身份。
-3. `npm run configure` 创建 `floccus-bookmarks` 并保存实际 UUID；已有数据库用交互输入 UUID 的方式绑定，不能使用全零本地 ID。
-4. `npm run db:remote` 应用迁移；`ADMIN_TOKEN`、`TOKEN_PEPPER` 分别通过 Wrangler Secret 配置。各自至少 32 字符，推荐 32 随机字节。
-5. `npm run deploy`，核对真实返回地址，验证 `/health/ready`，再使用管理 CLI 创建账号。
-6. 线上仅开放 HTTPS。可以用自有 Worker Custom Domain；不要把 Cloudflare Access 的浏览器登录页面放在 `/dav/` 前面，官方扩展无法通过该额外认证页面。
-7. `ALLOW_REGISTRATION` 保持 false。`ALLOW_INSECURE_LOCALHOST=true` 也只接受 loopback URL 的 HTTP，不使线上普通域名变成明文服务；可在生产改 false。
+只需要 Worker 文本变量 `USERNAME`、Secret `PASSWORD`，以及名为 `DB` 的 D1 绑定。部署后访问 `/init` 自动创建/升级全部表，并将变量中的账号密码安全初始化进表。**不用手动导入 SQL，不要求另外配置管理 Token、Pepper 或 Cron。**
 
-`wrangler.toml` 的 `DB` 绑定、数据库名和脚本一致。生产只有 Workers+D1；不使用额外的 KV、R2、Durable Objects、外部 PHP 或常驻服务。定时清理每天 **03:17 UTC（北京时间 11:17）** 执行。
+内部密钥自动生成并持久保存到 D1 的 `app_settings`。重复部署、访问 `/init` 或更改环境变量不会重置已有账号、书签、设备密码或内部密钥。原 v0.1/v0.2 用户按[升级说明](UPGRADE-0.3.md)先迁入旧密钥，再删除多余变量。
 
-本地迁移、dev 使用同一个 `.cache/wrangler/state`；请使用 package scripts，别误用默认 `.wrangler/state` 创建第二套本地库。
+## 默认值与高级可选设置
 
-## 配置值
+普通部署不需要填写下表高级选项，默认值已在代码中：
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ADMIN_TOKEN` | 无 | Secret，建号与密码恢复，推荐随机 32 bytes |
-| `TOKEN_PEPPER` | 无 | 独立 Secret，为随机凭证/限流键生成 HMAC |
-| `BOOTSTRAP_USERNAME` | 无 | 可选初始用户名，只对新空库生效 |
-| `BOOTSTRAP_PASSWORD` | 无 | 可选 Secret，初始账户强密码，14～256字符；成功建号后可移除 |
-| `ALLOW_REGISTRATION` | false | 自助注册开关，无邮箱验证；不建议公开开启 |
-| `ALLOW_INSECURE_LOCALHOST` | true | 只限回环域名开发 HTTP |
-| `MAX_BODY_BYTES` | 524288 | XBEL 输入字节限制，硬上限 1,000,000 |
-| `MAX_NODES` | 5000 | 活跃节点数，根不计；硬上限 10,000 |
+| `ALLOW_REGISTRATION` | false | 关闭公开注册 |
+| `ALLOW_INSECURE_LOCALHOST` | false | 仅本地 dev 命令临时允许 localhost HTTP，公网始终 HTTPS |
+| `MAX_BODY_BYTES` | 524288 | XBEL 限制，硬上限 1,000,000 |
+| `MAX_NODES` | 5000 | 活跃非根节点限制，硬上限 10,000 |
+| `ADMIN_TOKEN` / `TOKEN_PEPPER` | D1 自动生成 | 仅兼容旧部署/高级显式配置，普通部署不需填写 |
+| `BOOTSTRAP_USERNAME` / `BOOTSTRAP_PASSWORD` | 无 | v0.2.0 兼容别名，新部署改用 USERNAME、PASSWORD |
 
-另有固定限制：64 层、标题/URL 各 4096 字符、最多 50 个活跃凭证、每用户累计 50,000 个非根节点（包含墓碑）。派生节点 JSON 最大 1,500,000 bytes。调大输入限制不能绕过其他限制，不应在免费套餐未经压测直接提高。
+固定限制包括64层、标题/URL各4096字符、最多50个活跃凭证、每用户累计50,000个非根节点（含墓碑）、派生JSON最大1,500,000字节。调大输入限制不等于扩大安全或CPU上限。
+
+过期数据通过请求触发的受控任务清理，不必设置 Cron。旧 Cron 可以保留。没有请求时不运行清理；书签和永久墓碑不被自动删除。
 
 ## 免费与付费：不承诺“必定免费”
 
@@ -81,7 +75,7 @@ umask 077
 node scripts/run.mjs wrangler d1 export floccus-bookmarks --remote --output backups/d1-full.sql
 ```
 
-固定文件名会覆盖旧备份前先另行归档；建议加密、离线保存，并另行保存 `TOKEN_PEPPER` Secret（不可提交仓库）。SQL 包含管理密码哈希、凭证摘要及所有用户内容，是高敏感备份。
+固定文件名会覆盖旧备份前先另行归档；建议加密、离线保存，并保留旧版可选 `TOKEN_PEPPER` 以便迁移（新版本内部密钥已包含于 D1 全库备份，均不可提交仓库）。SQL 包含内部管理密钥、Pepper、管理密码哈希、凭证摘要及所有用户内容，是高敏感备份。
 
 Wrangler 当前本地 export 不提供 `--persist-to` 参数，不能给它随意添加该参数从而备份错误的库。本地数据可用管理 API 导出；全库维护流程主要面向线上 D1，未冒充已在线演练。
 
@@ -119,7 +113,7 @@ npm run deploy
 
 ## 升级与迁移失败
 
-v0.1.0 升级到网页管理版本 v0.2.0，先看[专用升级步骤](UPGRADE-0.2.md)，只应用新增迁移，不重复初始化旧库。
+当前版本升级请看[v0.3.0 升级步骤](UPGRADE-0.3.md)，访问 `/init` 自动应用新增迁移，不再要求普通用户导入 SQL。以下编号迁移建议面向开发维护者。
 
 1. 发布前运行 `npm ci && npm run check`；阅读变更日志及协议基线，不直接跟随上游 main。
 2. 暂停同步，在维护窗口备份 D1 和部署配置。

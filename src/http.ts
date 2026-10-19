@@ -1,4 +1,4 @@
-import type { Env } from './types';
+import type { Bindings } from './types';
 export class HttpError extends Error {
   constructor(public status: number, public code: string, message = code) { super(message); }
 }
@@ -30,7 +30,7 @@ export async function jsonBody(req: Request): Promise<Record<string, unknown>> {
     return value as Record<string, unknown>;
   } catch (e) { if (e instanceof HttpError) throw e; return fail(400, 'invalid_json'); }
 }
-export function secureTransport(req: Request, env: Env): void {
+export function secureTransport(req: Request, env: Bindings): void {
   const u = new URL(req.url);
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
   if (u.protocol !== 'https:' && !(local && env.ALLOW_INSECURE_LOCALHOST === 'true')) fail(426, 'https_required');

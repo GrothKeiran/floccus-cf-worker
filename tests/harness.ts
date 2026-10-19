@@ -4,17 +4,18 @@ import { readFile, readdir, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 export const ADMIN = 'test-admin-' + 'a'.repeat(64);
 export const PASSWORD = 'A-long-test-password-2026!';
-export async function harness(bindings: Record<string, string> = {}) {
+export async function harness(bindings: Record<string, string> = {}, options: { migrate?: boolean; legacySecrets?: boolean } = {}) {
   await mkdir('.cache/build', { recursive: true });
   await build({ entryPoints: ['src/index.ts'], bundle: true, format: 'esm', platform: 'browser', external: ['node:*'], target: 'es2022', outfile: '.cache/build/worker.mjs' });
   const persistRoot = resolve('.cache/miniflare', crypto.randomUUID());
-  const mf = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath: resolve('.cache/build/worker.mjs'),
+  const settings = (active = bindings, includeLegacy = options.legacySecrets !== false) => convertV4MiniflareOptions({ modules: true, scriptPath: resolve('.cache/build/worker.mjs'),
     compatibilityDate: '2026-10-18', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
-    bindings: { ADMIN_TOKEN: ADMIN, TOKEN_PEPPER: 'test-pepper-' + 'b'.repeat(64), ALLOW_REGISTRATION: 'false', ALLOW_INSECURE_LOCALHOST: 'true', ...bindings },
+    bindings: { ...(!includeLegacy ? {} : { ADMIN_TOKEN: ADMIN, TOKEN_PEPPER: 'test-pepper-' + 'b'.repeat(64) }), ALLOW_REGISTRATION: 'false', ALLOW_INSECURE_LOCALHOST: 'true', ...active },
     defaultPersistRoot: persistRoot,
-  }));
+  });
+  const mf = new Miniflare(settings());
   const db = await mf.getD1Database('DB');
-  for (const name of (await readdir('migrations')).filter(name => /^\d+_.+\.sql$/.test(name)).sort()) {
+  for (const name of (options.migrate === false ? [] : await readdir('migrations')).filter(name => /^\d+_.+\.sql$/.test(name)).sort()) {
     const migration = await readFile('migrations/' + name, 'utf8');
     for (const sql of migration.split(';').map(s => s.trim()).filter(Boolean)) await db.prepare(sql).run();
   }
@@ -41,7 +42,7 @@ export async function harness(bindings: Record<string, string> = {}) {
     }
     return { username, userId: user.id, session, device };
   }
-  return { mf, db, request, account, trace, close: async () => { await mf.dispose(); await rm(persistRoot, { recursive: true, force: true }); } };
+  return { mf, db, request, account, trace, restart: async (next = bindings, includeLegacy = options.legacySecrets !== false) => { await mf.setOptions(settings(next, includeLegacy)); }, close: async () => { await mf.dispose(); await rm(persistRoot, { recursive: true, force: true }); } };
 }
 export const FILE = '/dav/bookmarks.xbel';
 export function xbel(content: string, highestId = 10): string {

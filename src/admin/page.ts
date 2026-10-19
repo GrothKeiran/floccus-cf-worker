@@ -8,7 +8,7 @@ const page = `<!doctype html>
 <form id="login-form"><label for="username">用户名</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="64" required>
 <label for="password">账户密码</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="14" maxlength="256" required>
 <button id="login-button" type="submit" disabled>登录</button></form>
-<p class="muted">这里使用账户密码，不使用 ADMIN_TOKEN 或 app_ 开头的设备密码。首次初始化需要 Cloudflare 已配置 BOOTSTRAP_USERNAME 和 BOOTSTRAP_PASSWORD。</p></section>
+<p class="muted">这里使用账户密码，不使用 ADMIN_TOKEN 或 app_ 开头的设备密码。首次只需配置 USERNAME、PASSWORD 与 DB 绑定，再访问 /init。<a href="/init">初始化数据库</a></p></section>
 <section id="account-panel" hidden><div class="card account-heading"><div><h2>设备管理</h2><p>当前账户：<strong id="account-name"></strong></p></div><button id="logout" type="button" class="secondary">退出登录</button></div>
 <div class="card"><h2>添加一个浏览器</h2><p>每台浏览器分别创建，切勿多个设备共用同一应用密码。</p>
 <form id="device-form"><label for="device-label">设备名称</label><input id="device-label" maxlength="100" placeholder="例如：Chrome-电脑A" required><button id="create-device" type="submit">生成应用密码</button></form>
@@ -19,7 +19,7 @@ const page = `<!doctype html>
 <p>后端选择 WebDAV；文件名填 <code>bookmarks.xbel</code>；文件类型选 XBEL；另一个“加密密码”框必须留空。本地目录选择原生书签栏，正常使用双向合并。</p></div></div>
 <div class="card"><h2>已授权设备</h2><p class="muted">撤销只会使该设备的密码失效，不会删除书签。设备密码无法再次显示，丢失后请撤销并重新创建。</p><ul id="device-list"></ul><button id="refresh-devices" type="button" class="secondary">刷新设备列表</button></div>
 <div class="card"><h2>备份与安全</h2><button id="export" type="button" class="secondary">导出账户备份 JSON</button><p class="muted">备份包含书签和同步状态，请妥善保存，不要上传公开仓库。网页会话仅保存在当前页面内存中，刷新或关闭后需要重新登录。</p></div></section>
-<footer>首次初始化完成后，可删除 Cloudflare 中的 BOOTSTRAP_PASSWORD 和 BOOTSTRAP_USERNAME；不会影响已经创建的账号。它们不是密码重置开关。</footer>
+<footer>首次访问 /init 会自动建表，并将 USERNAME、PASSWORD 初始化到用户表。密码只保存安全哈希；重复初始化不会重置已有账号或书签。</footer>
 </main></body></html>`;
 const style = `:root{color-scheme:light dark;font:16px/1.65 system-ui,sans-serif;background:#f4f6fa;color:#17243c}*{box-sizing:border-box}body{margin:0}main{max-width:840px;margin:auto;padding:42px 22px}h1{font-size:clamp(26px,5vw,36px);line-height:1.25}h2{margin-top:0;font-size:21px}.eyebrow{font-size:12px;letter-spacing:.12em;color:#4269a2}.card{background:#fff;border:1px solid #dce3ee;border-radius:16px;padding:26px;margin:20px 0;box-shadow:0 5px 22px #17376108}label{display:block;margin:14px 0 6px;font-weight:600}input{width:100%;padding:12px;border:1px solid #aab8cc;border-radius:8px;font:inherit;background:transparent;color:inherit}input:focus{outline:2px solid #4c7be3;outline-offset:2px}button{font:inherit;cursor:pointer;border:1px solid #2852ad;background:#2852ad;color:#fff;padding:10px 18px;border-radius:8px;margin-top:18px}button:disabled{opacity:.55;cursor:wait}.secondary{background:transparent;color:#2852ad}.muted,footer{font-size:14px;color:#5c6b81}footer{margin-top:28px}.warning{color:#80531b;background:#fff4d9;padding:12px;border-radius:8px}#message{white-space:pre-wrap;padding:0}#message:not(:empty){padding:12px 16px;background:#e7efff;border-radius:8px}#message.error{background:#fff0f0;color:#8c2222}.account-heading{display:flex;align-items:center;justify-content:space-between;gap:20px}.account-heading button{margin:0}#device-list{padding:0;list-style:none}#device-list li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #e2e7ef;overflow-wrap:anywhere}#device-list button{margin:0;flex-shrink:0}#credential-panel{margin-top:24px;border-top:1px solid #dce3ee;padding-top:12px}code{font-family:ui-monospace,monospace}[hidden]{display:none!important}@media(prefers-color-scheme:dark){:root{background:#111827;color:#e6edf7}.card{background:#192235;border-color:#34425b}input{border-color:#68758c}.muted,footer{color:#afbed2}.secondary{color:#b4ceff;border-color:#7898d3}#message:not(:empty){background:#243957}#message.error{background:#49272d;color:#ffb8b8}.warning{background:#40351e;color:#f4d695}#device-list li,#credential-panel{border-color:#34425b}}`;
 const script = String.raw`(() => {
@@ -29,7 +29,8 @@ let token = '';
 let setupState = null;
 const errors = {
   unauthorized: '账号或密码错误，或会话已过期。',
-  bootstrap_not_configured: '尚未配置初始化账号。请在 Cloudflare 设置 BOOTSTRAP_USERNAME 和 Secret 类型的 BOOTSTRAP_PASSWORD（至少14字符），保存并部署。',
+  bootstrap_not_configured: '请在 Cloudflare 设置 USERNAME 和 Secret 类型的 PASSWORD（至少14字符），保存后访问 /init。',
+  database_not_initialized: '请先访问 /init，程序会自动创建全部表、生成内部密钥并初始化账号，不需要导入 SQL。',
   setup_already_completed: '数据库已初始化，请使用现有账号登录；更改环境变量不会重置密码。',
   rate_limited: '操作过于频繁，请稍后再试。',
   credential_limit: '有效凭证数量达到上限，请先撤销不用的设备，或稍后重新登录。',
@@ -66,12 +67,14 @@ async function loadSetup() {
   setupState = await api('/api/setup/status');
   $('login-title').textContent = setupState.initialized ? '登录管理' : '首次初始化';
   $('login-button').textContent = setupState.initialized ? '登录' : '初始化并登录';
-  $('login-button').disabled = !setupState.initialized && !setupState.bootstrapConfigured;
-  $('setup-note').textContent = setupState.initialized
-    ? '使用已有账户密码登录。初始环境变量不会覆盖数据库中的账号。'
+  $('login-button').disabled = !setupState.databaseInitialized || (!setupState.initialized && !setupState.bootstrapConfigured);
+  $('setup-note').textContent = !setupState.databaseInitialized
+    ? '先在 Cloudflare 设置 USERNAME、PASSWORD，绑定 D1 为 DB，然后访问 /init。程序会自动建表和创建账号，无需手工导入 SQL。'
+    : setupState.initialized
+    ? '使用已有账户密码登录。USERNAME、PASSWORD 只用于首次初始化，不会覆盖现有账号。'
     : setupState.bootstrapConfigured
-      ? '输入与 Cloudflare 初始环境变量一致的用户名和密码；点击后自动建号，不需要手动修改 D1。'
-      : '数据库为空。请先设置 BOOTSTRAP_USERNAME 和 BOOTSTRAP_PASSWORD，再保存并部署，刷新本页。';
+      ? '数据库已准备好。可先访问 /init 自动导入 USERNAME、PASSWORD，或输入匹配的初始凭证完成兼容初始化。'
+      : '请在 Cloudflare 设置 USERNAME、PASSWORD，保存后访问 /init。';
 }
 async function devices() {
   const rows = await api('/api/devices');
@@ -108,9 +111,9 @@ $('login-form').addEventListener('submit', async event => {
     $('webdav-url').value = location.origin + '/dav/';
     $('login-panel').hidden = true; $('account-panel').hidden = false;
     await devices();
-    message('登录成功。请为每台浏览器分别生成应用密码。首次初始化后可移除 BOOTSTRAP_PASSWORD。');
+    message('登录成功。请为每台浏览器分别生成应用密码。新增设备时无需修改 Worker 变量或 D1 表。');
   } catch (error) { message(error.message, true); }
-  finally { $('password').value = ''; $('login-button').disabled = !setupState || (!setupState.initialized && !setupState.bootstrapConfigured); }
+  finally { $('password').value = ''; $('login-button').disabled = !setupState || !setupState.databaseInitialized || (!setupState.initialized && !setupState.bootstrapConfigured); }
 });
 $('device-form').addEventListener('submit', async event => {
   event.preventDefault(); $('create-device').disabled = true;

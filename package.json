@@ -1,6 +1,6 @@
 {
   "name": "floccus-cf-worker",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Floccus-compatible WebDAV/XBEL bookmark sync on Cloudflare Workers + D1",
   "type": "module",
@@ -9,10 +9,10 @@
     "node": ">=22.14"
   },
   "scripts": {
-    "dev": "node scripts/run.mjs wrangler dev --persist-to .cache/wrangler/state",
+    "dev": "node scripts/run.mjs wrangler dev --persist-to .cache/wrangler/state --var ALLOW_INSECURE_LOCALHOST:true",
     "test": "npm run upstream:prepare && node scripts/run.mjs vitest run",
     "test:watch": "node scripts/run.mjs vitest",
-    "typecheck": "node scripts/run.mjs tsc --noEmit",
+    "typecheck": "node scripts/generate-schema.mjs --check && node scripts/run.mjs tsc --noEmit",
     "build": "node scripts/build.mjs",
     "check": "npm run typecheck && npm test && npm run deploy:dry",
     "deploy": "node scripts/run.mjs wrangler deploy",
@@ -25,7 +25,10 @@
     "client": "node scripts/client.mjs",
     "test:service": "node scripts/run.mjs vitest run tests/service.test.ts",
     "build:dashboard": "node scripts/build-dashboard.mjs",
-    "test:bootstrap": "node scripts/run.mjs vitest run tests/bootstrap.test.ts"
+    "test:bootstrap": "node scripts/run.mjs vitest run tests/bootstrap.test.ts",
+    "schema:generate": "node scripts/generate-schema.mjs",
+    "schema:check": "node scripts/generate-schema.mjs --check",
+    "test:init": "node scripts/run.mjs vitest run tests/initialize.test.ts tests/bootstrap.test.ts"
   },
   "dependencies": {
     "fast-xml-parser": "5.11.2"

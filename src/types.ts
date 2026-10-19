@@ -1,7 +1,9 @@
-export interface Env {
+export interface Bindings {
   DB: D1Database;
-  ADMIN_TOKEN: string;
-  TOKEN_PEPPER: string;
+  USERNAME?: string;
+  PASSWORD?: string;
+  ADMIN_TOKEN?: string;
+  TOKEN_PEPPER?: string;
   BOOTSTRAP_USERNAME?: string;
   BOOTSTRAP_PASSWORD?: string;
   ALLOW_REGISTRATION?: string;
@@ -9,6 +11,7 @@ export interface Env {
   MAX_BODY_BYTES?: string;
   MAX_NODES?: string;
 }
+export interface Env extends Bindings { ADMIN_TOKEN: string; TOKEN_PEPPER: string }
 export interface Principal { userId: string; credentialId: string; kind: 'session' | 'device' }
 export interface NodeRecord {
   id: number; parent: number | null; type: 'folder' | 'bookmark'; title: string; url: string | null; position: number;

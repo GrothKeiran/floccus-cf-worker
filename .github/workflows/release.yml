@@ -37,5 +37,5 @@ jobs:
           gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes
           gh release upload "$RELEASE_TAG" \
-            .cache/dashboard/worker.mjs .cache/dashboard/schema.sql \
+            .cache/dashboard/worker.mjs \
             .cache/dashboard/SHA256SUMS .cache/dashboard/THIRD_PARTY_LICENSES.txt --clobber

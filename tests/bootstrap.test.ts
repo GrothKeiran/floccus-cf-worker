@@ -20,7 +20,7 @@ afterAll(async () => { await h?.close(); await disabled?.close(); await existing
 describe('一次性网页初始化', () => {
   test('未配置时不建号，静态网页和状态接口不暴露秘密', async () => {
     const state = await disabled.request('/api/setup/status');
-    expect(await state.json()).toEqual({ initialized: false, bootstrapConfigured: false });
+    expect(await state.json()).toEqual({ initialized: false, bootstrapConfigured: false, databaseInitialized: true });
     expect((await disabled.request('/api/setup', 'POST', setup())).status).toBe(503);
     expect(await disabled.db.prepare('SELECT COUNT(*) AS n FROM users').first('n')).toBe(0);
     const response = await h.request('/admin');
@@ -55,7 +55,7 @@ describe('一次性网页初始化', () => {
     const hash = await h.db.prepare('SELECT password_hash FROM users').first<string>('password_hash');
     expect(hash).toMatch(/^scrypt\$16384\$8\$5\$/);
     expect(hash).not.toContain(INITIAL);
-    expect(await (await h.request('/api/setup/status')).json()).toEqual({ initialized: true, bootstrapConfigured: true });
+    expect(await (await h.request('/api/setup/status')).json()).toEqual({ initialized: true, bootstrapConfigured: true, databaseInitialized: true });
   });
   test('初始化后可登录并签发独立设备密码，账户密码仍不能用于 DAV', async () => {
     const response = await h.request('/api/login', 'POST', setup());

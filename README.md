@@ -1,21 +1,37 @@
 # Floccus Cloudflare Workers + D1
 
-使用 **Cloudflare Workers + D1** 自托管浏览器书签同步。官方 [Floccus](https://floccus.org/) 扩展选择 **WebDAV / XBEL** 即可连接，不需要 VPS、Docker、Nextcloud，也不需要修改扩展。
+纯 **Cloudflare Workers + D1** 的浏览器书签同步后端，兼容官方 Floccus 的 **WebDAV / XBEL**。不需要 VPS、Docker、Nextcloud 或修改扩展。
 
-> 这是**书签专用 WebDAV 协议子集**，不是通用网盘，也不是 Nextcloud Bookmarks API。每个用户同步一份 `bookmarks.xbel`；初次合并、差异计算与浏览器 ID 映射由 Floccus 完成，服务端负责身份隔离、文件校验、锁和原子提交。
+## 最简配置：两个变量 + 一个 D1 绑定
 
-## 选择一种部署方式
-
-| 方式 | 适合谁 | 操作入口 |
+| 名称 | 类型 | 填什么 |
 |---|---|---|
-| **方式一：Wrangler 命令行部署（推荐）** | 有 Node.js，或者让 AI 编程助手在授权后协助部署 | [完整命令行教程](docs/DEPLOY-WRANGLER.md) |
-| **方式二：Cloudflare 控制台手动部署** | 希望自己在网页创建 Worker、D1、填写变量和数据库绑定 | [完整网页控制台教程](docs/DEPLOY-DASHBOARD.md) |
+| `USERNAME` | Worker 普通文本变量 | 自己的用户名，例如 `owner` |
+| `PASSWORD` | Worker **Secret** | 自己的强账户密码，14～256 字符 |
+| `DB` | **D1 数据库资源绑定** | 新建自己的 D1，然后绑定到 Worker，变量名必须为 `DB` |
 
-两种方式部署的是同一份代码和数据库结构，不会要求购买付费套餐。**不能保证所有书签规模和使用频率都能在免费限制内运行**，详见[额度与维护](docs/DEPLOYMENT.md)。
+**不需要手动建表、导入 SQL、配置 `ADMIN_TOKEN` / `TOKEN_PEPPER`，也不需要设置 Cron。**
 
-### 方式一：Wrangler 快速开始
+部署后在浏览器访问：
 
-要求 Node.js **22.14+（推荐 24）**、npm、Git。以下命令使用 Bash / Git Bash / WSL：
+```text
+https://你的Worker域名/init
+```
+
+程序会自动完成：
+
+1. 创建所有必需的表、索引和迁移记录。
+2. 将 Worker 变量中的 `USERNAME` 和 `PASSWORD` 初始化进用户表；**密码保存 scrypt 哈希，不存明文**。
+3. 自动生成并在 D1 持久保存内部安全密钥，重新部署不会丢失。
+4. 保留已有账号、设备凭证和书签，重复访问不会清空数据、重置密码或更换密钥。
+
+`/init` 只使用 Worker 已配置的变量，不接受 URL 或请求体指定另一个账号。已有账号不会被变量覆盖；修改变量不是重置密码功能。
+
+## 两种部署方式
+
+### 方式一：Wrangler 命令行部署
+
+适合有 Node.js 的用户，也可以交给获得授权的 AI 编程助手执行：
 
 ```bash
 git clone https://github.com/GrothKeiran/floccus-cf-worker.git
@@ -23,127 +39,88 @@ cd floccus-cf-worker
 npm ci
 cp wrangler.example.toml wrangler.toml
 node scripts/run.mjs wrangler login
-# 创建 floccus-bookmarks，并把真实 UUID 写入本地 wrangler.toml
 npm run configure
-npm run db:remote
-# 分别在交互提示中输入两个独立的强随机 Secret
-node scripts/run.mjs wrangler secret put ADMIN_TOKEN
-node scripts/run.mjs wrangler secret put TOKEN_PEPPER
+# 在交互提示中输入自己的账户密码；用户名在 wrangler.toml 的 USERNAME 中设置
+node scripts/run.mjs wrangler secret put PASSWORD
 npm run deploy
 ```
 
-**不要照抄他人的账户 ID、D1 UUID 或密码。** `wrangler.toml` 是本地私有配置，已被 Git 忽略；仓库只发布 `wrangler.example.toml`。已有数据库、Worker 重名、Secret 生成和建号步骤见[方式一完整教程](docs/DEPLOY-WRANGLER.md)。
+然后打开自己的 `/init`。**不必执行 `db:remote`，不必手动应用迁移。** 完整步骤：[Wrangler 教程](docs/DEPLOY-WRANGLER.md)。
 
-### 方式二：网页控制台快速开始
+### 方式二：Cloudflare 网页控制台部署
 
-1. 从 [Releases](https://github.com/GrothKeiran/floccus-cf-worker/releases/latest) 下载配套的 **`worker.mjs`、`schema.sql`**。
-2. 在 Cloudflare 创建一个新的 D1 数据库，在 **Console** 执行 `schema.sql`。
-3. 创建一个 **Hello World Worker**；兼容日期设为 `2026-10-18` 或更新，并启用 **`nodejs_compat`**。
-4. 给 Worker 添加 **D1 database 绑定**：变量名必须为 **`DB`**，选择刚创建的数据库。
-5. 添加两个基础 Secret 和普通变量；首次建号再设置 `BOOTSTRAP_USERNAME` 和 Secret 类型的 `BOOTSTRAP_PASSWORD`。
-6. 在代码编辑器中用 `worker.mjs` 的全部内容替换示例代码，保存并部署。
-7. 访问自己的 `/admin`，输入刚配置的初始账号密码，点击“初始化并登录”，然后在网页中为每个浏览器生成应用密码。**无需终端或手工插入 D1 账号记录。**
+1. 从 [Releases](https://github.com/GrothKeiran/floccus-cf-worker/releases/latest) 下载 **`worker.mjs`**。
+2. 在 Cloudflare 创建一个 **Worker**，用发布文件的全部内容替换示例代码。
+3. 创建一个 **D1 数据库**，给 Worker 添加 D1 资源绑定，变量名填 **`DB`**。
+4. 在 Worker 变量处只添加：文本 **`USERNAME`**、Secret **`PASSWORD`**。
+5. 发布后访问自己的 **`/init`**，自动建表并把变量中的账号密码写入 D1。
 
-完整逐步说明、变量类型、定时清理和注意事项见[方式二完整教程](docs/DEPLOY-DASHBOARD.md)。预打包文件已经包含依赖，**不能直接把 `src/index.ts` 粘贴到控制台，也不需要自己在控制台安装 npm 包**。
+运行时需要 Node.js 兼容 API：如控制台提示 `node:crypto` 不可用，开启 `nodejs_compat` 并使用兼容日期 `2026-10-18` 或经确认的更新日期。它是平台运行时选项，不是需要额外填写的账号变量。
 
-## 绑定与环境变量配置
+**不需要进入 D1 Console 执行 SQL，不需要下载 SQL 附件，不需要终端。** 完整步骤：[网页控制台教程](docs/DEPLOY-DASHBOARD.md)。
 
-| 名称 | 类型 | 值 / 作用 |
-|---|---|---|
-| `DB` | **D1 数据库绑定** | 选择自己的 D1 数据库；不是普通文本变量 |
-| `ADMIN_TOKEN` | **Secret** | 独立强随机字符串，至少 32 字符；管理员建号、恢复密码 |
-| `TOKEN_PEPPER` | **Secret** | 另一份独立强随机字符串，至少 32 字符；凭证摘要密钥 |
-| `BOOTSTRAP_USERNAME` | 文本，首次建号可选 | 初始用户名，例如 `owner`；仅用于新空库初始化 |
-| `BOOTSTRAP_PASSWORD` | **Secret**，与上项配套 | 自己设置的强账户密码，14～256 字符；不是 Floccus 设备密码 |
-| `ALLOW_REGISTRATION` | 文本 | `false`，默认关闭公开注册 |
-| `ALLOW_INSECURE_LOCALHOST` | 文本 | 控制台生产部署填 `false`；本地 HTTP 开发才设 `true` |
-| `MAX_BODY_BYTES` | 文本 | `524288`，每份 XBEL 最大 512 KiB |
-| `MAX_NODES` | 文本 | `5000`，书签和文件夹数量合计上限 |
+## 使用账号与配置 Floccus
 
-`ADMIN_TOKEN` 和 `TOKEN_PEPPER` 推荐各自生成 **32 个随机字节、编码为 64 个十六进制字符**，不能使用示例占位值。`BOOTSTRAP_PASSWORD` 是自己的强账户口令。不要把上述 Secret 填进 Floccus、写进源码或发布到 GitHub。
+初始化后，打开自己的 **`/admin`**，用刚才的 `USERNAME` 和 `PASSWORD` 登录。网页可为每台浏览器生成独立应用密码，查看和撤销设备、导出备份、退出登录。这样不必把同一个设备凭证复制给所有浏览器。
 
-## 创建账户，再配置 Floccus
-
-**从 v0.2.0 起内置 `/admin` 网页管理页面。** 新空库先在 Cloudflare 设置 `BOOTSTRAP_USERNAME` 和 `BOOTSTRAP_PASSWORD`，再到网页输入同一组账号密码，“初始化并登录”会自动建号。登录后可生成/撤销每设备应用密码、查看设备列表、导出备份和退出。详情见[账户管理教程](docs/ACCOUNTS.md)，CLI / PowerShell 仍可选用。
-
-初始化只允许新空数据库且仅一次，已有用户不受环境变量覆盖；初始化账号删除后也不会自动重建。成功后可移除这两个初始变量，账号继续使用 D1 中的密码哈希登录。**修改初始变量不是重置密码功能。**
-
-已有 v0.1.0 部署者先应用 `0002_bootstrap.sql` 再更新 Worker，保留原账号和设备密码，不要重跑整份初始化 SQL。[升级步骤](docs/UPGRADE-0.2.md)
-
-| Floccus 配置项 | 填写内容 |
+| Floccus 配置项 | 填什么 |
 |---|---|
 | 后端 | **WebDAV**，不是 Nextcloud Bookmarks |
-| WebDAV URL | 自己的 Worker HTTPS 根地址后追加 **`/dav/`** |
-| 用户名 | 自己创建的用户名，例如 `owner` |
-| 密码 | 该设备的 **`applicationPassword`**（`app_…`），不是账号密码或管理员 Secret |
-| 书签文件名 | **`bookmarks.xbel`**，不要有前导 `/` |
-| 文件类型 | **XBEL** |
-| 加密密码 / Passphrase | **留空**，本服务不支持加密后的书签文件 |
-| 本地同步目录 | 浏览器原生书签栏 / 收藏夹栏 / 书签工具栏 |
-| 同步策略 | 双向合并，保留安全保护；首次先让一台完成，再配置其他设备 |
+| URL | 自己的 HTTPS Worker 根地址加 **`/dav/`** |
+| 用户名 | 已初始化进 D1 的用户名 |
+| 密码 | `/admin` 为该浏览器生成的 **`applicationPassword`**（`app_…`） |
+| 文件名 | **`bookmarks.xbel`**，不要有前导 `/` |
+| 文件类型 | XBEL |
+| 另一个加密密码 / Passphrase | **留空**，不支持加密 XBEL |
+| 本地目录 | 浏览器原生书签栏 / 收藏夹栏 / 书签工具栏 |
+| 策略 | 双向合并，保留安全保护；先完成第一台，再连接下一台 |
 
-**每个设备使用不同的应用密码**，不要把同一个设备凭证复制给多个同时同步的配置。E043（大比例新增保护）、首次合并、拉取与推送的区别见 [Floccus 配置与排错](docs/FLOCCUS.md)。
+账号和设备密码的说明：[账户教程](docs/ACCOUNTS.md)。首次合并、E043 和拉取/推送的区别：[Floccus 配置](docs/FLOCCUS.md)。
 
-## 容量与安全边界
+## 已有 v0.1 / v0.2 部署如何升级
 
-- 当前应用默认上限：每个用户 **512 KiB / 5,000 个书签和文件夹 / 64 层**，先达到哪个就受哪个限制。
-- 存储的是网址、标题和目录，不保存网页正文、图片或视频。它不是可存普通文件的 WebDAV 网盘。
-- D1 免费单库上限 **500 MB**、账户总计 **5 GB**；这些容量不等于单份 XBEL 上传限制。[官方限制](https://developers.cloudflare.com/d1/platform/limits/)
-- Workers Free 有每日请求额度和单次 CPU 限制；D1 另有每日读写额度。没有变化的定时同步仍有检查请求、锁和限流读写。[费用说明](docs/DEPLOYMENT.md)
-- 管理密码使用原生 scrypt（N=16384/r=8/p=5）；HTTPS、设备应用密码、用户隔离、限流和审计默认启用。
-- 支持版本 CAS、临时上传、锁、原子快照提交、删除墓碑、凭证撤销、导出和账户删除。
-- 不支持 HTML、加密 XBEL、通用 WebDAV、多文件路径或 Nextcloud API。`javascript:`、`data:`、浏览器内部 URL 等不在允许范围。
-- 用户书签不做端到端加密：能管理 Cloudflare/D1 的管理员能访问服务端内容；HTTPS 只保护传输。
+**先保留原 `ADMIN_TOKEN`、`TOKEN_PEPPER`，更新 Worker 后访问 `/init`。** 程序自动补表，并把原内部密钥迁入 D1，保留已有设备密码。成功后才能移除旧版额外 Secrets。已有用户不会被新的 `USERNAME`、`PASSWORD` 覆盖。
 
-## 本地开发与检查
+不要清空数据库，不要把新初始密码当成恢复旧密码的方法。详细步骤：[升级到 v0.3.0](docs/UPGRADE-0.3.md)。
+
+## 默认限制与安全边界
+
+- 书签专用 WebDAV 协议子集，不是通用网盘，也不是 Nextcloud Bookmarks API；每个用户一份 `bookmarks.xbel`。
+- 默认单用户快照 **512 KiB / 5,000 个书签与文件夹 / 64 层**，哪个先到哪个生效；只保存网址、标题和目录，不下载网页内容。
+- 支持用户隔离、设备凭证、租约锁、临时上传、版本 CAS、原子提交、删除墓碑、导出和凭证撤销。
+- 管理密码使用原生 scrypt（N=16384/r=8/p=5）；公网必须 HTTPS。服务端不做端到端加密，D1 管理员可以读取书签与内部配置。
+- 内部密钥保存在 D1 的 `app_settings`，不会返回到网页或状态接口。**完整 D1 备份包含敏感内部配置，禁止公开上传。**
+- 过期会话、锁、临时文件、限流和审计记录有请求触发的自动清理，不要求用户额外设置 Cron。无请求时无需运行；已有 Cron 可继续保留。
+- Workers/D1 免费套餐有调用、CPU、读写和容量限制，不能承诺任意负载都免费。详情：[费用与维护](docs/DEPLOYMENT.md)。
+
+## 本地开发
+
+Node.js 22.14+（推荐 24），所有缓存、测试数据库和临时文件放在项目 `.cache/`。
 
 ```bash
 npm ci
-cp wrangler.example.toml wrangler.toml  # 已有配置时不要覆盖
-npm run typecheck
-npm run test:bootstrap  # 仅网页初始化/设备凭证相关的针对性测试
-npm run check
-```
-
-`npm run check` 包含本地 workerd/D1、固定上游适配器与同步引擎回归、部署 dry-run；**不创建远端资源**。测试首次需要拉取固定版本 Floccus 5.11.1，之后可复用项目内缓存。真实部署范围与历史测试限制见[验证记录](docs/VALIDATION.md)。
-
-本地启动前生成专用 Secrets（不覆盖已有文件）：
-
-```bash
-node --input-type=module <<'JS'
-import { randomBytes } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
-writeFileSync('.dev.vars', `ADMIN_TOKEN=${randomBytes(32).toString('hex')}\nTOKEN_PEPPER=${randomBytes(32).toString('hex')}\n`, { flag: 'wx', mode: 0o600 });
-JS
-npm run db:local
+cp wrangler.example.toml wrangler.toml  # 已有配置不要覆盖
+cp .dev.vars.example .dev.vars
+# 编辑 .dev.vars，填写自己的 USERNAME 和真实强 PASSWORD
 npm run dev
 ```
 
-本地 `wrangler.toml` 需允许 localhost HTTP（示例已开启）。测试数据库、日志、npm 缓存和临时文件均放在 `.cache/`，不会操作线上数据库。
-
-控制台发布包可复现生成：
+本地打开终端给出的 localhost 地址后加 `/init`，也会自动建表、建号。不需要先跑本地 SQL 迁移；`npm run dev` 只对本地开发临时允许 localhost HTTP，不改变生产 HTTPS 要求。
 
 ```bash
-npm run build:dashboard
-# .cache/dashboard/worker.mjs、schema.sql、SHA256SUMS
+npm run typecheck
+npm run test:init       # 空库、仅两个变量、初始化竞态、密钥持久化和旧部署兼容
+npm run check           # 完整本地测试与部署 dry-run，不操作远端数据库
+npm run build:dashboard # 输出 .cache/dashboard/worker.mjs 与许可/校验和
 ```
 
-## 项目结构与更多文档
+数据库结构来自 `migrations/`，由 `npm run schema:generate` 生成内嵌结构；类型检查会防止内嵌结构与迁移文件不同步。以后加迁移仍由 `/init` 按版本自动应用，不要求普通用户执行 SQL。
 
-```text
-src/                       网页管理、一次性建号、认证、WebDAV、XBEL 与 D1 事务
-migrations/                数据库迁移
-scripts/                   CLI、项目内缓存与发布包构建
-tests/                     服务、协议和真实上游同步引擎测试
-wrangler.example.toml      可公开的部署配置模板
-.github/workflows/         检查与版本发布
-```
+## 文档
 
-- [Wrangler 部署](docs/DEPLOY-WRANGLER.md) / [控制台部署](docs/DEPLOY-DASHBOARD.md)
-- [账户和设备凭证](docs/ACCOUNTS.md) / [Floccus 配置](docs/FLOCCUS.md) / [升级到 v0.2.0](docs/UPGRADE-0.2.md)
-- [额度、备份、恢复和升级](docs/DEPLOYMENT.md)
-- [协议调研](docs/RESEARCH.md) / [协议与数据模型](docs/PROTOCOL.md)
-- [安全与故障排查](docs/SECURITY.md) / [验证记录](docs/VALIDATION.md)
-- [参与开发](CONTRIBUTING.md) / [变更记录](CHANGELOG.md)
+- [控制台部署](docs/DEPLOY-DASHBOARD.md) / [Wrangler 部署](docs/DEPLOY-WRANGLER.md)
+- [账户与设备](docs/ACCOUNTS.md) / [Floccus 配置](docs/FLOCCUS.md) / [升级到 v0.3.0](docs/UPGRADE-0.3.md)
+- [费用与备份恢复](docs/DEPLOYMENT.md) / [安全](docs/SECURITY.md) / [验证范围](docs/VALIDATION.md)
+- [协议研究](docs/RESEARCH.md) / [协议说明](docs/PROTOCOL.md) / [贡献说明](CONTRIBUTING.md)
 
-许可证：本项目 MIT。固定版本 Floccus 源码仅用于测试，不打入生产 Worker；第三方许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本项目 MIT，非官方 Floccus 或 Cloudflare 产品。固定 Floccus 5.11.1 源码只用于测试，不打入生产包。第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

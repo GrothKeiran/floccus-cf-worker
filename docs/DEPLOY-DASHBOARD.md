@@ -1,169 +1,86 @@
-# 方式二：Cloudflare 网页控制台手动部署
+# Cloudflare 网页控制台部署：只填账号密码，D1 不用导入表
 
-此路线从**创建 Worker、初始化 D1、绑定数据库、配置变量和发布代码，到创建账号、生成设备应用密码**，都能在网页完成。v0.2.0 内置 `/admin` 管理页，不再要求用户运行终端或手动修改 D1 账号表。
+从 v0.3.0 起，普通部署只需要两个 Worker 变量和一个 D1 绑定，数据库表结构和内部安全密钥都由程序准备。
 
-> 此文依据官方控制台流程和本项目源码整理；预打包 Worker 与方式一同源。没有声称已在第二个全新账号逐项点击验证此路线。Cloudflare 菜单可能随界面版本显示为中文或英文，识别相应的 Bindings、Variables and Secrets、Runtime 即可。
+## 1. 下载 Worker
 
-## 1. 下载配套发布文件
+在 [Releases](https://github.com/GrothKeiran/floccus-cf-worker/releases/latest) 下载 **`worker.mjs`**。这是已包含网页、依赖、表结构和迁移的完整模块。
 
-打开 [GitHub Releases](https://github.com/GrothKeiran/floccus-cf-worker/releases/latest)，从同一个版本下载：
+- 不用下载 Source code 编译，也不能直接把 `src/index.ts` 粘贴到网页编辑器。
+- 不需要 SQL 文件；新版本发布包不再要求用户手动导入表。
+- 可选下载 `SHA256SUMS` 检查完整性，许可在 Worker 注释和 `THIRD_PARTY_LICENSES.txt` 中保留。
 
-| 文件 | 用途 |
-|---|---|
-| `worker.mjs` | 已包含依赖的单文件 ES Module Worker，粘贴到编辑器 |
-| `schema.sql` | 给**新建空数据库**初始化表、索引和 Wrangler 迁移记录 |
-| `THIRD_PARTY_LICENSES.txt` | 本项目及打包依赖的完整许可（Worker 内也保留注释） |
-| `SHA256SUMS` | 可选：对照下载文件 SHA-256，检查下载完整性 |
+## 2. 创建 Worker
 
-不要使用 GitHub 自动生成的 Source code 压缩包代替 `worker.mjs`，不要只粘贴 `src/index.ts`，也不要混用不同版本的代码和初始 SQL。编译产物仍保留 Cloudflare 原生 `node:crypto` 导入，这是正常的，不是漏装依赖。
+Cloudflare Dashboard → **Workers & Pages → Create application → Hello World**，选择自己的 Worker 名并创建。不要覆盖其他已有服务，也不要误建 Pages 站点。
 
-维护者可用 `npm ci && npm run build:dashboard` 生成相同类型的发布附件，输出在 `.cache/dashboard/`。
+在 **Edit code** 用 `worker.mjs` 的全部内容替换默认代码。它是 ES Module，保留 `export default`，不要改为旧式 fetch 事件。
 
-## 2. 创建 D1 数据库并初始化
+如果编辑器提示 `node:crypto` 不可用，在 **Settings → Runtime** 开启 `nodejs_compat`，使用 `2026-10-18` 或经确认的更新兼容日期。这是代码使用原生安全密码哈希所需的运行时支持，不是额外的用户环境变量。
 
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，选对自己的账号。
-2. 进入 **Storage & databases → D1 SQL database**，点击 **Create database**。
-3. 数据库名建议填 `floccus-bookmarks`，位置可根据设备所在地选择；创建数据库本身不要求开启 Workers Paid。
-4. 打开刚创建的数据库，进入 **Console / 控制台**。
-5. 用文本编辑器打开下载的 `schema.sql`，复制全部 SQL 到控制台，执行。若界面限制一次执行的语句量，可按分号依次执行；一旦报错就停止，先检查原因。
-6. 所有建表和索引语句都成功后，文件末尾会记录此版本包含的迁移（当前为 `0001_initial.sql` 和 `0002_bootstrap.sql`）已应用，方便以后切换到 Wrangler 管理。
+## 3. 创建 D1，并绑定 Worker
 
-**只对新空库执行一次。** 已有本项目数据时不要重跑初始 SQL、不要删除业务表、也不要清空后重试。不要将本项目初始化 SQL 执行到其他应用的数据库。
+1. 在 **Storage & databases → D1 SQL database** 创建自己的数据库，名字可用 `floccus-bookmarks`。
+2. 打开 Worker → **Bindings → Add binding → D1 database**。
+3. **Variable name 填 `DB`（大写）**，数据库选择刚创建的那一个，保存。
 
-`schema.sql` 包含业务表以及 `d1_migrations`。末尾的迁移标记必须在前面所有 SQL 成功后执行，不能在初始化失败时提前标记完成。未来新增迁移请按版本更新说明处理，升级时不重放整份初始文件。
+到这里即可。**不用打开 D1 Console，不用手动建表，不用导入 SQL。** `DB` 是资源绑定，不是普通文本变量，也不是把数据库 UUID 写成字符串。
 
-## 3. 创建 Worker
+## 4. 变量处只添加自己的账号和密码
 
-1. 进入 **Workers & Pages → Create application**。
-2. 选择 **Start with Hello World! / Hello World 示例**，而不是 Pages 静态站点。
-3. 填入一个未被自己账号使用的 Worker 名称，例如 `floccus-cf-worker`，点击 **Deploy** 创建。
-4. 保存系统给出的 HTTPS 地址，后续 WebDAV 地址就是这个域名加 `/dav/`。
-
-Hello World 只是用来先创建资源，下一步才换成本项目代码。不要覆盖自己其他已有 Worker。
-
-## 4. 配置运行时兼容性
-
-在 Worker 的 **Settings → Runtime / 运行时** 设置：
-
-| 设置 | 值 |
-|---|---|
-| Compatibility date / 兼容日期 | `2026-10-18`，或经过维护者确认的更新日期 |
-| Compatibility flags / 兼容性标志 | **`nodejs_compat`** |
-
-保存设置。本项目使用原生 scrypt，需要 Node.js 兼容 API；不要因为导入错误而删除密码哈希代码或降低安全参数。先配置兼容性，再粘贴发布代码。
-
-## 5. 给 Worker 绑定 D1——变量名必须是 DB
-
-1. 打开 Worker 的 **Bindings / 绑定** 页签。
-2. 点击 **Add binding → D1 database**。
-3. **Variable name / 变量名填 `DB`（大写）**。
-4. 数据库下拉框选择第 2 步创建的 `floccus-bookmarks`。
-5. 点击 **Add binding / Save**；如果界面要求 Deploy，则完成发布。
-
-这里是**资源绑定**，不要在普通环境变量里创建一个名叫 `DB` 的文本，也不要把数据库 UUID 当成字符串填给代码。控制台会自动关联实际 D1，Worker 才能调用 `env.DB.prepare(...)`。
-
-数据库显示名可以不同，但代码读取的绑定名不能改成 `floccus_bookmarks` 或其他值，除非同时修改源码。
-
-## 6. 配置基础 Secrets、初始账号和普通变量
-
-进入 **Settings → Variables and Secrets / 变量和机密**。全部配置在同一个生产 Worker 环境中，不要只加到预览环境。
-
-### 两个基础 Secret
-
-点击新增，类型选择 **Secret / 加密值**：
-
-| 名称 | 值 |
-|---|---|
-| `ADMIN_TOKEN` | 第一份独立强随机字符串，推荐 32 随机字节编码为 64 个十六进制字符 |
-| `TOKEN_PEPPER` | 第二份独立强随机字符串，同样推荐 64 个十六进制字符，不能与上面相同 |
-
-每个值至少 32 字符，不要用简单口令或文档示例。建议用密码管理器生成并保管。也可在 Windows PowerShell 中运行以下代码，每次运行生成一份新值，分别运行两次：
-
-```powershell
-$bytes = New-Object byte[] 32
-$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-[BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
-```
-
-Secret 在保存后不能直接重新查看，先放入自己的密码管理器。不要把 Secret 上传到 GitHub、截图分享，或粘贴到 Floccus。未来改动 `TOKEN_PEPPER` 会使已有凭证失效，不要随意更换。
-
-### 设置自己的初始用户名和账户密码
-
-新空数据库首次建号，另外添加：
+Worker → **Settings → Variables and Secrets**：
 
 | 名称 | 类型 | 值 |
 |---|---|---|
-| `BOOTSTRAP_USERNAME` | Text | 自己的用户名，例如 `owner`（3～64 个小写字母、数字、下划线、点或短横线，首位字母或数字） |
-| `BOOTSTRAP_PASSWORD` | **Secret** | 自己设置的强账户密码，14～256 字符，推荐用密码管理器生成 |
+| `USERNAME` | Text | 自己的用户名，例如 `owner` |
+| `PASSWORD` | **Secret** | 自己的强密码，14～256 字符 |
 
-保存并部署后，访问自己的 `/admin` 页面，输入同一组用户名与密码，点击“初始化并登录”。程序会自动把安全密码哈希和初始账号写入 D1，**不需要手工插入用户记录**。
+用户名为 3～64 个字母/数字/点/下划线/短横线，首位字母或数字，程序按小写保存。
 
-这两个变量仅用于空库的一次性初始化，已有用户不会被覆盖。成功后建议删除 `BOOTSTRAP_PASSWORD`（用户名也可删除），日后仍用原账户密码登录网页。修改这些变量不能重置密码；删除已初始化账号后也不会再次自动建号。已有账号直接登录即可，不需要添加初始变量。
+**不需要再添加 `ADMIN_TOKEN`、`TOKEN_PEPPER`、`BOOTSTRAP_*`、MAX_* 或其他变量。** 内部管理密钥和凭证摘要密钥由程序随机生成，持久保存在 D1；默认安全设置已经内置。
 
-### 四个普通文本变量
+账号密码不要写进代码，也不要把示例占位值当作实际密码。设置好后保存并 **Deploy**。
 
-| 名称 | 类型 | 值 |
-|---|---|---|
-| `ALLOW_REGISTRATION` | Text | `false` |
-| `ALLOW_INSECURE_LOCALHOST` | Text | `false` |
-| `MAX_BODY_BYTES` | Text | `524288` |
-| `MAX_NODES` | Text | `5000` |
+## 5. 浏览器访问 /init
 
-填写时只输入表中的值，不额外带引号。`false` 关闭公开注册，不影响管理员创建账户。文件大小和节点数是应用限制，不是 Cloudflare 数据库存储容量。
-
-**Dashboard 不读取仓库的 TOML。** 不会因为 GitHub 模板写了这些变量就自动生效，必须在页面实际填写并保存。
-
-## 7. 粘贴 Worker 代码并发布
-
-1. 打开 Worker 的 **Edit code / 编辑代码**。
-2. 用文本编辑器打开下载的 `worker.mjs`，复制**全部内容**。
-3. 在控制台编辑器中替换默认入口 `worker.js` 的示例代码；入口文件可保留 `worker.js` 名称，不需要建立多个源码文件。
-4. 点击 **Deploy / 部署**。仅点 Save 或本地预览不代表正式地址已经更新。
-
-这是模块语法（`export default`），不是旧式 `addEventListener('fetch', ...)`。如果出现 `node:crypto` 不可用，回到第 4 步检查兼容性；如果提示模块找不到，检查是否误用了未打包的 TypeScript 源文件。
-
-页面编辑时不要误删第 5、6 步的数据库绑定与变量。
-
-## 8. 添加每日清理任务
-
-进入 Worker 的 **Settings → Trigger Events / 触发事件 → Cron Triggers**，新增：
+在自己的 Worker 域名后加 `/init`，例如：
 
 ```text
-17 3 * * *
+https://自己的Worker域名/init
 ```
 
-时区为 UTC：每天 **UTC 03:17 / 北京时间 11:17**。它清理过期会话、过期锁、旧临时文件、超过一天的限流记录和超过 30 天的审计记录；不会自动删除用户书签或永久删除墓碑。
+访问后程序会自动：
 
-Wrangler 路线会从配置自动创建这个触发器；手动路线必须自己添加，不能只粘贴 Worker 代码就省略。
+- 逐项创建或升级所有表、索引和迁移记录。
+- 生成并保存内部密钥；重复访问不更换。
+- 读取 Worker 中的 `USERNAME` 和 `PASSWORD`，将账号与密码哈希初始化进 D1。
+- 建立账号的初始根节点和同步状态。
 
-## 9. 查看就绪状态，然后创建账户
+页面显示“初始化完成”后即可进入 `/admin`。初次并发访问有事务保护，账号只创建一次；中断后可以重新访问继续完成，不用清空数据库。
 
-访问**自己的 Worker 域名**的 `/health/ready`，应返回：
+`/init` 不接受 URL 或请求体提供其他用户名和密码。重复访问不会重置账号、密码、书签或设备，也不会清空数据库。已有账号时，新环境变量不会覆盖旧密码。
 
-```json
-{"status":"ready"}
-```
+## 6. 登录并添加浏览器
 
-- `503 secrets_not_configured`：检查两个 Secret 的名称、长度和正式部署。
-- `500 internal_error`：检查 `DB` 是 D1 资源绑定，以及是否对正确数据库完整执行了 SQL。
-- 根路径 `/` 会跳转 `/admin`：这是管理网页，不是 Floccus 的 WebDAV 地址。
-- `ready` 不会自动创建用户，也不证明已完成真实书签同步。
+在 `/admin` 用刚才设置的账户密码登录，填写设备名并点击“生成应用密码”，复制网页给出的配置到 Floccus。
 
-接着打开自己的 **`/admin`**：初次输入初始账号密码并初始化，已有账号直接登录。填写设备名并点击“生成应用密码”，网页会显示 WebDAV URL、用户名和本设备 `app_…` 密码，按 [Floccus 配置](FLOCCUS.md)复制即可。每个浏览器都单独生成；无需复制管理员 Secret，也无需手动修改 D1。WebDAV URL 是自己的根地址后加 `/dav/`，不是 `/admin` 或 `/health/ready`。
+Floccus 使用本设备独立 `app_…` 应用密码，文件名 `bookmarks.xbel`、类型 XBEL、加密密码留空。每台浏览器分别签发，不用在 Worker 新增其他账号变量。详细见[账户教程](ACCOUNTS.md)。
 
-## 10. 以后更新
+## 7. 自动清理与升级
 
-**v0.1.0 → v0.2.0 必须先应用 `0002_bootstrap.sql`，保留原账号、密码、设备和书签。不要重跑整份 `schema.sql`。** 具体见[升级指南](UPGRADE-0.2.md)。
+不必手动添加 Cron：程序会在有请求时触发受控的过期数据清理，无请求时不需要运行。清理不删除书签或永久墓碑。已有 Cron 也可以保留。
 
-先导出和备份数据库，再阅读新版本变更记录。仅替换新的 `worker.mjs` 不会执行数据库迁移；如果有新增迁移，应按说明先应用新增 SQL。不要重跑整份 `schema.sql`。D1 绑定、Secret 和普通变量需要保留。
+以后升级先备份 D1，替换新版 Worker，再访问 `/init` 自动应用新增迁移。不要清空数据库或手动重放旧 SQL。从 v0.1/v0.2 升级必须先保留旧密钥，见[旧版升级说明](UPGRADE-0.3.md)。
 
-要切换为 Wrangler 管理时，下载源码，复制配置模板，把自己的 Worker 名和 D1 UUID 填入本地配置，先 `d1 migrations list` 核对记录，再部署。不要同时让网页编辑和 Git 构建互相覆盖而不记录版本。
+## 故障提示
 
-## 官方参考
+| 提示 | 处理 |
+|---|---|
+| 缺少数据库绑定 | 给 Worker 添加 D1 资源绑定，名字必须为 `DB` |
+| 缺少账号密码 | 检查 `USERNAME`、Secret `PASSWORD` 的名称、长度及是否保存部署 |
+| 数据库未初始化 | 访问 `/init`，无需导入 SQL |
+| legacy_pepper_required | 旧部署需先保留原 `TOKEN_PEPPER` 再访问 `/init`，不要随机替换 |
+| 旧密钥与内部配置冲突 | 先停止改动，核对备份；不能用换密钥掩盖问题 |
+| 修改环境密码后登不上 | 变量只用于首次建号，已有账号仍用原密码；不是重置开关 |
 
-- [D1：控制台创建数据库、执行 SQL 与绑定 Worker](https://developers.cloudflare.com/d1/get-started/)
-- [Workers：Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
-- [Workers：兼容性标志](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)
-- [Workers：Node.js crypto](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/)
-- [D1：迁移记录](https://developers.cloudflare.com/d1/reference/migrations/)
+参考：[Cloudflare D1 绑定](https://developers.cloudflare.com/d1/get-started/)、[Worker Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)。

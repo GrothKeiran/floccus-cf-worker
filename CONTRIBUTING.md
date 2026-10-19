@@ -10,3 +10,5 @@
 8. 本项目没有实施线上安全审计，报告测试范围与限制要精确，不根据 dry-run 宣称部署成功。
 
 控制台部署包由 `npm run build:dashboard` 生成到 `.cache/dashboard/`。修改源码后应重新生成发布附件，不能把 TypeScript 源码直接粘贴到控制台冒充可执行包。
+
+修改 migrations 后必须运行 `npm run schema:generate` 并提交生成的 src/storage/schema.ts；typecheck 会检查一致性。普通部署通过 /init 自动应用内嵌迁移，不要求用户导入 SQL。保持现有迁移编号与内容不变，只新增迁移。

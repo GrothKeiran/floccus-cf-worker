@@ -117,3 +117,11 @@ JSON 接口必须 `Content-Type: application/json`，最大 8 KiB，不使用 Co
 - POST `/api/setup`：JSON `username`、`password` 必须匹配配置的初始凭证；只允许空库且未完成过初始化，成功 201、已初始化 409、未配置 503、凭证不匹配 401。
 - `bootstrap_state` 单例记录永久保存完成标记，删除账号仅将关联 user_id 设为 NULL；初始化与用户/根节点/同步状态/审计在同一事务中完成。
 - 管理页复用既有 login、me、devices、export、logout API，无 Cookie 登录旁路，无直接 D1 浏览器访问。
+
+## v0.3.0 自包含初始化
+
+- GET/POST `/init`：根据绑定的 D1 自动应用内嵌迁移，生成/迁入内部密钥，以 Worker `USERNAME`、`PASSWORD` 创建初始账号。不是把请求参数当成新账号，也不是密码重置/清库接口。
+- 默认返回无敏感内容的 HTML 状态；`Accept: application/json` 返回 `ready`、`accountCreated`。无账号配置且为空库时503，旧密钥丢失或冲突时停止而不替换。
+- GET `/api/setup/status` 新增 `databaseInitialized` 布尔值；不返回内部配置。未初始化的普通API返回503 `database_not_initialized`。
+- `app_settings` 持久保存内部密钥与清理时间；迁移标记由 `d1_migrations` 事务保护，已应用迁移不重放。原有设备/会话摘要继续使用同一Pepper。
+- 过期数据的受控后台清理由请求触发，也兼容旧 Cron；普通部署不需要额外触发器。

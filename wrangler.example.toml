@@ -1,5 +1,4 @@
-# Copy to wrangler.toml before local development or Wrangler deployment.
-# Keep your actual account_id/database_id in the ignored wrangler.toml only.
+# Copy to ignored wrangler.toml. Configure PASSWORD with wrangler secret put PASSWORD.
 name = "floccus-cf-worker"
 main = "src/index.ts"
 compatibility_date = "2026-10-18"
@@ -7,23 +6,16 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 [vars]
-# Optional: uncomment only for a fresh database, then set BOOTSTRAP_PASSWORD as a Secret.
-# BOOTSTRAP_USERNAME = "owner"
-ALLOW_REGISTRATION = "false"
-# Only enables HTTP for localhost/127.0.0.1/::1, never for public hosts.
-ALLOW_INSECURE_LOCALHOST = "true"
-MAX_BODY_BYTES = "524288"
-MAX_NODES = "5000"
+USERNAME = "owner"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "floccus-bookmarks"
-# Local-only placeholder. npm run configure replaces this for production.
+# Local placeholder; npm run configure writes the real UUID.
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
-[triggers]
-crons = ["17 3 * * *"]
-
+# No manual SQL import, extra Secrets or Cron configuration is needed.
+# After deployment, visit /init to create tables and initialize USERNAME/PASSWORD.
 [observability]
 enabled = false

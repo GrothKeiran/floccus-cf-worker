@@ -1,6 +1,6 @@
 import './cache-env.mjs';
 import { build } from 'esbuild';
-import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
@@ -43,24 +43,12 @@ for (const name of [...packages].sort()) {
 const notices = licenses.join('\n\n----------------------------------------\n\n');
 await writeFile(resolve(output, 'THIRD_PARTY_LICENSES.txt'), notices);
 await appendFile(resolve(output, 'worker.mjs'), '\n/*!\n' + notices.replaceAll('*/', '* /') + '\n*/\n');
-// A dashboard SQL import also records the initial migration, so a later move
-// to Wrangler does not try to create the same tables a second time.
-const migrationNames = (await readdir(resolve(root, 'migrations'))).filter(name => /^\d+_.+\.sql$/.test(name)).sort();
-const initial = (await Promise.all(migrationNames.map(name => readFile(resolve(root, 'migrations', name), 'utf8')))).join('\n');
-const tracking = `
--- Wrangler migration metadata: only run after ALL statements above succeed.
-CREATE TABLE IF NOT EXISTS d1_migrations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE,
-  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-INSERT INTO d1_migrations (name) VALUES ${migrationNames.map(name => "('" + name.replaceAll("'", "''") + "')").join(', ')};
-`;
-await writeFile(resolve(output, 'schema.sql'), projectLicense.split('\n').map(line => '-- ' + line).join('\n') + '\n-- For a NEW, EMPTY D1 database only. Do not re-run on an existing database.\n' + initial + tracking);
+// Schema and migrations are embedded in worker.mjs and applied by /init.
+await rm(resolve(output, 'schema.sql'), { force: true });
 const sums = [];
-for (const name of ['worker.mjs', 'schema.sql', 'THIRD_PARTY_LICENSES.txt']) {
+for (const name of ['worker.mjs', 'THIRD_PARTY_LICENSES.txt']) {
   const data = await readFile(resolve(output, name));
   sums.push(`${createHash('sha256').update(data).digest('hex')}  ${name}`);
 }
 await writeFile(resolve(output, 'SHA256SUMS'), sums.join('\n') + '\n');
-console.log('Dashboard release files: .cache/dashboard/{worker.mjs,schema.sql,THIRD_PARTY_LICENSES.txt,SHA256SUMS}');
+console.log('Dashboard release files: .cache/dashboard/{worker.mjs,THIRD_PARTY_LICENSES.txt,SHA256SUMS}');

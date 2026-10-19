@@ -1,7 +1,3 @@
-# Generate independently: openssl rand -hex 32. Copy to .dev.vars; never commit real values.
-ADMIN_TOKEN=replace-with-at-least-32-random-characters
-TOKEN_PEPPER=replace-with-an-independent-32-character-secret
-
-# Optional first-account initialization through /admin (fresh databases only):
-# BOOTSTRAP_USERNAME=owner
-# BOOTSTRAP_PASSWORD=replace-with-your-own-strong-account-password
+# Local development only. Use a real strong password; do not commit .dev.vars.
+USERNAME=owner
+PASSWORD=replace-with-your-own-strong-password-at-least-14-characters
