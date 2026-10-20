@@ -14,7 +14,7 @@ export async function harness(bindings: Record<string, string> = {}, options: { 
     defaultPersistRoot: persistRoot,
   });
   const mf = new Miniflare(settings());
-  const db = await mf.getD1Database('DB');
+  let db = await mf.getD1Database('DB');
   if (options.migrate !== false) await db.prepare('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)').run();
   for (const name of (options.migrate === false ? [] : await readdir('migrations')).filter(name => /^\d+_.+\.sql$/.test(name)).sort()) {
     const migration = await readFile('migrations/' + name, 'utf8');
@@ -44,7 +44,7 @@ export async function harness(bindings: Record<string, string> = {}, options: { 
     }
     return { username, userId: user.id, session, device };
   }
-  return { mf, db, request, account, trace, restart: async (next = bindings, includeLegacy = options.legacySecrets !== false) => { await mf.setOptions(settings(next, includeLegacy)); }, close: async () => { await mf.dispose(); await rm(persistRoot, { recursive: true, force: true }); } };
+  return { mf, get db() { return db; }, request, account, trace, restart: async (next = bindings, includeLegacy = options.legacySecrets !== false) => { await mf.setOptions(settings(next, includeLegacy)); db = await mf.getD1Database('DB'); }, close: async () => { await mf.dispose(); await rm(persistRoot, { recursive: true, force: true }); } };
 }
 export const FILE = '/dav/bookmarks.xbel';
 export function xbel(content: string, highestId = 10): string {

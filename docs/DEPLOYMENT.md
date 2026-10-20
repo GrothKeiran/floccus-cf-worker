@@ -10,7 +10,7 @@
 
 Floccus 选择 WebDAV 后端，服务器地址填写 Worker 域名加 `/dav/`，用户名和密码填写部署时设置的账号信息。完整参数见 [Floccus 配置](FLOCCUS.md)。
 
-内部密钥由程序生成并保存在 D1 的 `app_settings`。重复部署、访问 `/init` 或更改环境变量不会重置已有账号、书签、设备密码或内部密钥。已有部署的迁移注意事项见[升级说明](UPGRADE-0.4.md)。
+内部密钥由程序生成并保存在 D1 的 `app_settings`。修改 `USERNAME` / `PASSWORD` 后保存部署，再访问 `/init` 会更新关联账号，保留书签和内部密钥，并撤销旧凭证。配置不变时不会撤销凭证。已有部署的迁移注意事项见[升级说明](UPGRADE-0.5.md)。
 
 ## 默认值与高级可选设置
 
@@ -115,7 +115,7 @@ npm run deploy
 
 ## 升级与迁移失败
 
-当前版本升级请看[v0.4.0 升级步骤](UPGRADE-0.4.md)，访问 `/init` 自动应用新增迁移，不再要求普通用户导入 SQL。以下编号迁移建议面向开发维护者。
+当前版本升级请看[升级步骤](UPGRADE-0.5.md)，访问 `/init` 自动应用新增迁移，不再要求普通用户导入 SQL。以下编号迁移建议面向开发维护者。
 
 1. 发布前运行 `npm ci && npm run check`；阅读变更日志及协议基线，不直接跟随上游 main。
 2. 暂停同步，在维护窗口备份 D1 和部署配置。
@@ -126,6 +126,9 @@ npm run deploy
 7. 依赖升级分别验证类型、工作运行时、官方 adapter/engine 回归和实际浏览器；修改固定 Floccus 提交时同时更新研究和测试证据。
 
 ## 安全恢复密码
+
+普通账号可通过修改 Worker Secret `PASSWORD`、保存部署并访问 `/init` 来重置密码，书签保留。以下管理 CLI 供已配置高权限管理凭证的维护人员使用；使用 CLI 修改关联账号后，应同步更新 Worker 的账号配置，避免之后访问 `/init` 时应用旧值。
+
 
 ```bash
 read -rsp 'ADMIN_TOKEN: ' ADMIN_TOKEN; echo; export ADMIN_TOKEN

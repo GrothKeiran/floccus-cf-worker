@@ -87,7 +87,7 @@ HTTP 请求可在不同 Worker 实例并发，D1 事务提供数据库级保护�
 
 ### 共享账户密码与可选设备凭证
 
-v0.4 默认 Basic `USERNAME:PASSWORD`，用户名和密码由 Worker 变量在 `/init` 初始化进 D1；后续按 D1 当前的 scrypt 哈希验证。可选 `USERNAME:app_…` 保持兼容。两条路径最终都得到用户作用域和内部 credential_id，原锁/临时文件/CAS 保护不变。
+默认 Basic `USERNAME:PASSWORD`，用户名和密码由 Worker 变量在 `/init` 初始化进 D1；后续按 D1 当前的 scrypt 哈希验证。可选 `USERNAME:app_…` 保持兼容。两条路径最终都得到用户作用域和内部 credential_id，原锁/临时文件/CAS 保护不变。
 
 官方 `.lock` 请求不发送独立设备 ID/租约 token，默认不携带 Cookie。账户密码模式因此用用户、当前密码哈希以及 Cloudflare IP/User-Agent 的 HMAC 生成短期上下文，覆盖不同浏览器/网络等常见场景，但**不能宣称可靠识别每台设备**。同一出口且相同 User-Agent 的两个配置可能共享身份；IP 切换会改变身份，旧锁未到期时可能需要等待。
 
@@ -122,10 +122,21 @@ JSON 接口必须 `Content-Type: application/json`，最大 8 KiB，不使用 Co
 - `bootstrap_state` 单例记录永久保存完成标记，删除账号仅将关联 user_id 设为 NULL；初始化与用户/根节点/同步状态/审计在同一事务中完成。
 - 管理页复用既有 login、me、devices、export、logout API，无 Cookie 登录旁路，无直接 D1 浏览器访问。
 
-## v0.3.0 自包含初始化
+## 数据库初始化与账号配置
 
-- GET/POST `/init`：根据绑定的 D1 自动应用内嵌迁移，生成/迁入内部密钥，以 Worker `USERNAME`、`PASSWORD` 创建初始账号。不是把请求参数当成新账号，也不是密码重置/清库接口。
-- 默认返回无敏感内容的 HTML 状态；`Accept: application/json` 返回 `ready`、`accountCreated`。无账号配置且为空库时503，旧密钥丢失或冲突时停止而不替换。
+- GET/POST `/init`：根据绑定的 D1 自动应用内嵌迁移、准备内部密钥，并将 Worker `USERNAME` / `PASSWORD` 应用到关联账号。首次创建账号，后续配置变化更新同一用户 ID；请求体或 URL 参数不能指定账号。
+- 默认返回无敏感内容的 HTML 状态；`Accept: application/json` 返回 `ready`、`accountCreated`、`accountUpdated`。无账号配置且为空库时503，旧密钥丢失或冲突时停止而不替换。
 - GET `/api/setup/status` 新增 `databaseInitialized` 布尔值；不返回内部配置。未初始化的普通API返回503 `database_not_initialized`。
 - `app_settings` 持久保存内部密钥与清理时间；迁移标记由 `d1_migrations` 事务保护，已应用迁移不重放。原有设备/会话摘要继续使用同一Pepper。
 - 过期数据的受控后台清理由请求触发，也兼容旧 Cron；普通部署不需要额外触发器。
+
+
+### 环境变量关联账号
+
+`environment_account` 单例持久关联 Worker 配置所管理的用户 ID，重命名不会换用户或丢失书签。已关联账号删除后保留空引用标记，不重建账号或自动选择其他用户。
+
+变更账号时以当前用户名、密码哈希和关联 ID 作事务前置条件，原子更新账号、撤销全部凭证/锁/临时文件并记安全审计。用户名冲突或前置条件变化时事务回滚；同配置并发更新只生效一次，重复请求不会撤销新凭证。
+
+旧库优先使用原初始化标记的用户 ID。缺少可靠关联时，要求先用现有账号的用户名和密码完成关联，避免任意选择或覆盖其他用户。只使用兼容的 `BOOTSTRAP_*` 变量时仍按一次性初始化处理，不用它们覆盖已有账号。
+
+该接口显式应用当前部署的配置。回滚 Worker 后访问 `/init` 可能重新应用该部署的旧账号配置；更新时应确认使用当前正式部署，不能把历史预览部署用于账号维护。

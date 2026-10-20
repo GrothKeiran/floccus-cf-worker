@@ -1,6 +1,7 @@
 import type { Bindings, Env } from '../types';
 import { fail } from '../http';
-import { accountStatements } from '../auth/service';
+import { accountStatements, limit } from '../auth/service';
+import { synchronizeEnvironmentAccount } from './environment-account';
 import { constantEqual, hashPassword, randomToken } from '../auth/crypto';
 import { migrations } from './schema';
 import { clearRuntimeCache, runtimeEnv, validKey } from './runtime';
@@ -79,14 +80,18 @@ export async function createInitialAccount(env: Env, username: string, password:
     throw error;
   }
 }
-export async function initializeDatabase(bindings: Bindings): Promise<{ ready: true; accountCreated: boolean }> {
+export async function initializeDatabase(bindings: Bindings, ip = 'local'): Promise<{ ready: true; accountCreated: boolean; accountUpdated: boolean }> {
   if (!bindings.DB) fail(503, 'database_binding_required');
   const account = initialAccount(bindings);
-  if (!account && !await accountInitialized(bindings.DB)) fail(503, 'username_password_not_configured');
+  const managedConfiguration = bindings.USERNAME !== undefined || bindings.PASSWORD !== undefined;
+  if (!account && (managedConfiguration || !await accountInitialized(bindings.DB))) fail(503, 'username_password_not_configured');
   await applySchema(bindings.DB);
   const env = await seedKeys(bindings);
+  await limit(env, `init-ip:${ip}`, 20);
+  await limit(env, 'init-global', 60);
   // Permanently retain an initialized marker for legacy databases too.
   await env.DB.prepare('INSERT OR IGNORE INTO bootstrap_state(id,user_id,completed_at) SELECT 1,NULL,? WHERE EXISTS(SELECT 1 FROM users LIMIT 1)').bind(Date.now()).run();
   const accountCreated = account ? await createInitialAccount(env, account.username, account.password) : false;
-  return { ready: true, accountCreated };
+  const accountUpdated = account && managedConfiguration ? await synchronizeEnvironmentAccount(env, account) : false;
+  return { ready: true, accountCreated, accountUpdated };
 }

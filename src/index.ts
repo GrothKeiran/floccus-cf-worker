@@ -19,13 +19,13 @@ export default {
         if (origin && origin !== new URL(req.url).origin) fail(403, 'origin_not_allowed');
       }
       if (path === '/init' && ['GET', 'POST'].includes(req.method)) {
-        const result = await initializeDatabase(bindings);
+        const result = await initializeDatabase(bindings, req.headers.get('CF-Connecting-IP') ?? 'local');
         return securityHeaders(req.headers.get('Accept')?.includes('application/json') ? json(result) : initPage(), true);
       }
       if (path === '/' && req.method === 'GET') return securityHeaders(new Response(null, { status: 302, headers: { Location: '/admin' } }));
       const page = adminRoutes(req, path);
       if (page) return securityHeaders(page, true);
-      if (path === '/health' && req.method === 'GET') return securityHeaders(json({ status: 'ok', service: 'floccus-cf-worker', protocol: 'webdav-xbel', version: '0.4.0' }));
+      if (path === '/health' && req.method === 'GET') return securityHeaders(json({ status: 'ok', service: 'floccus-cf-worker', protocol: 'webdav-xbel', version: '0.5.0' }));
       if (path === '/api/setup/status' && req.method === 'GET') return securityHeaders(json(await initializationStatus(bindings)));
       const env = await runtimeEnv(bindings);
       if (path === '/health/ready' && req.method === 'GET') {

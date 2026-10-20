@@ -1,5 +1,7 @@
 # 升级到 v0.4.0：Floccus 直接使用 Worker 的 PASSWORD
 
+> 本文保留对应历史版本的迁移说明；当前账号配置与升级流程请看[更新服务与账号配置](UPGRADE-0.5.md)。
+
 1. 先备份原 D1。备份包含书签、密码哈希和内部密钥，禁止公开上传。
 2. 更新原 Worker（控制台替换新版 `worker.mjs`，或更新源码后 `npm run deploy`），保留原 `DB` 绑定和 `USERNAME` / Secret `PASSWORD`。
 3. 访问自己的 **`/init`**，程序自动应用 `0004_password_dav.sql`；**不用手工执行 SQL**。这是对 credentials 新增字段和索引，不重建账号、不清空书签、不更换内部密钥。

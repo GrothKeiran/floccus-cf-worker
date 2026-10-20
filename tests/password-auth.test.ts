@@ -105,8 +105,12 @@ describe('账户密码直接用于 Floccus WebDAV', () => {
   });
   test('错误密码验证限流；只限未缓存的验证，不限正常缓存同步序列', async () => {
     const headers = { ...chrome, 'CF-Connecting-IP': '192.0.2.80' };
-    let response!: Response;
-    for (let i = 0; i < 21; i++) { response = await h.request('/dav/', 'OPTIONS', undefined, basic('rate-test-user', 'Wrong-password-2026!'), headers); if (response.status === 429) break; }
+    const pepper = await h.db.prepare("SELECT value FROM app_settings WHERE key='token_pepper'").first<string>('value');
+    const key = createHmac('sha256', pepper!).update('rate:dav-password-name:rate-test-user').digest('hex');
+    const bucket = Math.floor(Date.now() / 60_000) * 60_000;
+    // Seed both sides of the boundary so wall-clock minute changes cannot make this flaky.
+    for (const at of [bucket, bucket + 60_000]) await h.db.prepare('INSERT INTO rate_limits(key,bucket,count) VALUES(?,?,20)').bind(key, at).run();
+    const response = await h.request('/dav/', 'OPTIONS', undefined, basic('rate-test-user', 'Wrong-password-2026!'), headers);
     expect(response.status).toBe(429); expect(response.headers.get('Retry-After')).toBe('60');
     expect((await h.request('/dav/', 'OPTIONS', undefined, basic('owner', NEXT), headers)).status).toBe(204);
   });

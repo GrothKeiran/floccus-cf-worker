@@ -12,8 +12,8 @@ const initHeaders = { Accept: 'application/json' };
 beforeAll(async () => {
   fresh = await harness({ USERNAME: 'owner', PASSWORD: INIT_PASSWORD }, { migrate: false, legacySecrets: false });
   invalid = await harness({ USERNAME: 'owner', PASSWORD: 'short' }, { migrate: false, legacySecrets: false });
-  legacy = await harness({ USERNAME: 'alice', PASSWORD: INIT_PASSWORD });
-  missingPepper = await harness({ USERNAME: 'alice', PASSWORD: INIT_PASSWORD });
+  legacy = await harness({ USERNAME: 'alice', PASSWORD });
+  missingPepper = await harness({ USERNAME: 'alice', PASSWORD });
 });
 afterAll(async () => { await fresh?.close(); await invalid?.close(); await legacy?.close(); await missingPepper?.close(); });
 describe('仅两个变量与空 D1 的完整初始化', () => {
@@ -45,7 +45,7 @@ describe('仅两个变量与空 D1 的完整初始化', () => {
     expect(user!.password_hash).toMatch(/^scrypt\$16384\$8\$5\$/);
     expect(user!.password_hash).not.toContain(INIT_PASSWORD);
     expect(await fresh.db.prepare('SELECT COUNT(*) AS n FROM users').first('n')).toBe(1);
-    expect(await fresh.db.prepare('SELECT COUNT(*) AS n FROM d1_migrations').first('n')).toBe(4);
+    expect(await fresh.db.prepare('SELECT COUNT(*) AS n FROM d1_migrations').first('n')).toBe(5);
     const keys = (await fresh.db.prepare("SELECT key,value FROM app_settings WHERE key IN ('admin_token','token_pepper') ORDER BY key").all()).results;
     expect(keys).toHaveLength(2); previousKeys = JSON.stringify(keys);
     expect(keys.every(row => /^[a-f0-9]{64}$/.test(String(row.value)))).toBe(true);
@@ -68,29 +68,31 @@ describe('仅两个变量与空 D1 的完整初始化', () => {
     await fresh.db.prepare('UPDATE sync_state SET version=23,body=? WHERE user_id=?').bind('existing-snapshot', userId).run();
     const oldHash = await fresh.db.prepare('SELECT password_hash FROM users').first('password_hash');
     const result = await fresh.request('/init', 'GET', undefined, undefined, initHeaders);
-    expect(await result.json()).toEqual({ ready: true, accountCreated: false });
+    expect(await result.json()).toEqual({ ready: true, accountCreated: false, accountUpdated: false });
     expect(await fresh.db.prepare('SELECT password_hash FROM users').first('password_hash')).toBe(oldHash);
     expect(await fresh.db.prepare('SELECT version FROM sync_state WHERE user_id=?').bind(userId).first('version')).toBe(23);
     const keys = (await fresh.db.prepare("SELECT key,value FROM app_settings WHERE key IN ('admin_token','token_pepper') ORDER BY key").all()).results;
     expect(JSON.stringify(keys)).toBe(previousKeys);
   });
-  test('重启及修改两个变量不会覆盖已入表账号，设备密码仍然有效', async () => {
+  test('重启修改两个变量后 init 更新原账号，保留数据并撤销旧设备密码', async () => {
     await fresh.restart({ USERNAME: 'another-owner', PASSWORD: 'Changed-environment-password-2026!' }, false);
     expect((await fresh.request('/init', 'GET', undefined, undefined, initHeaders)).status).toBe(200);
-    expect((await fresh.request('/api/login', 'POST', JSON.stringify({ username: 'owner', password: INIT_PASSWORD }))).status).toBe(200);
-    expect((await fresh.request('/api/login', 'POST', JSON.stringify({ username: 'another-owner', password: 'Changed-environment-password-2026!' }))).status).toBe(401);
-    expect((await fresh.request('/dav/', 'OPTIONS', undefined, 'Basic ' + Buffer.from('owner:' + app).toString('base64'))).status).toBe(204);
+    expect((await fresh.request('/api/login', 'POST', JSON.stringify({ username: 'owner', password: INIT_PASSWORD }))).status).toBe(401);
+    expect((await fresh.request('/api/login', 'POST', JSON.stringify({ username: 'another-owner', password: 'Changed-environment-password-2026!' }))).status).toBe(200);
+    expect(await fresh.db.prepare('SELECT id FROM users').first('id')).toBe(userId);
+    expect(await fresh.db.prepare('SELECT version FROM sync_state WHERE user_id=?').bind(userId).first('version')).toBe(23);
+    expect((await fresh.request('/dav/', 'OPTIONS', undefined, 'Basic ' + Buffer.from('owner:' + app).toString('base64'))).status).toBe(401);
   });
   test('旧部署先访问 /init 会保留旧 pepper，移除额外 Secrets 后旧应用密码继续有效', async () => {
     const account = await legacy.account(); const oldDevice = await account.device();
     expect((await legacy.request('/init', 'GET', undefined, undefined, initHeaders)).status).toBe(200);
-    await legacy.restart({ USERNAME: 'alice', PASSWORD: INIT_PASSWORD }, false);
+    await legacy.restart({ USERNAME: 'alice', PASSWORD }, false);
     expect((await legacy.request('/dav/', 'OPTIONS', undefined, oldDevice.basic)).status).toBe(204);
     expect((await legacy.request('/api/login', 'POST', JSON.stringify({ username: 'alice', password: PASSWORD }))).status).toBe(200);
   });
   test('旧 pepper 未迁入 D1 就被移除时，不生成替代密钥破坏旧凭证', async () => {
     const account = await missingPepper.account(); await account.device();
-    await missingPepper.restart({ USERNAME: 'alice', PASSWORD: INIT_PASSWORD }, false);
+    await missingPepper.restart({ USERNAME: 'alice', PASSWORD }, false);
     const result = await missingPepper.request('/init', 'GET', undefined, undefined, initHeaders);
     expect(result.status).toBe(503);
     expect(await result.json()).toEqual({ error: 'legacy_pepper_required' });

@@ -37,5 +37,11 @@ export const migrations = [
       "ALTER TABLE credentials ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'token' CHECK(auth_mode IN ('token','password'))",
       "CREATE INDEX IF NOT EXISTS credentials_auth_mode ON credentials(user_id,auth_mode,expires_at)"
     ]
+  },
+  {
+    "name": "0005_environment_account.sql",
+    "statements": [
+      "CREATE TABLE IF NOT EXISTS environment_account (\n  id INTEGER PRIMARY KEY CHECK(id=1),\n  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,\n  updated_at INTEGER NOT NULL\n)"
+    ]
   }
 ] as const;
