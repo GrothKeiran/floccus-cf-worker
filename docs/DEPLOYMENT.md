@@ -4,13 +4,13 @@
 
 公开仓库只包含 `wrangler.example.toml`。Wrangler 操作前先复制为私有的 `wrangler.toml`，填自己的资源信息；控制台路线则在网页逐项配置，不读取 TOML。
 
-## 当前最简部署（v0.4.0）
+## 部署配置
 
-只需要 Worker 文本变量 `USERNAME`、Secret `PASSWORD`，以及名为 `DB` 的 D1 绑定。部署后访问 `/init` 自动创建/升级全部表，并将变量中的账号密码安全初始化进表。**不用手动导入 SQL，不要求另外配置管理 Token、Pepper 或 Cron。**
+部署需要 Worker 文本变量 `USERNAME`、Secret `PASSWORD`，以及名为 `DB` 的 D1 资源绑定。部署后访问 `/init`，程序会准备表结构，并将用户名和密码哈希保存到 D1。
 
-Floccus 直接用这同一组 `USERNAME` / `PASSWORD` 连接 `/dav/`，不需要先进入 `/admin` 或生成应用密码。独立应用密码为可选高级功能。
+Floccus 选择 WebDAV 后端，服务器地址填写 Worker 域名加 `/dav/`，用户名和密码填写部署时设置的账号信息。完整参数见 [Floccus 配置](FLOCCUS.md)。
 
-内部密钥自动生成并持久保存到 D1 的 `app_settings`。重复部署、访问 `/init` 或更改环境变量不会重置已有账号、书签、设备密码或内部密钥。原 v0.1/v0.2 用户按[升级说明](UPGRADE-0.3.md)先迁入旧密钥，再删除多余变量。
+内部密钥由程序生成并保存在 D1 的 `app_settings`。重复部署、访问 `/init` 或更改环境变量不会重置已有账号、书签、设备密码或内部密钥。已有部署的迁移注意事项见[升级说明](UPGRADE-0.4.md)。
 
 ## 默认值与高级可选设置
 
@@ -135,4 +135,4 @@ npm run client -- reset-password alice
 unset ADMIN_TOKEN FLOCCUS_PASSWORD
 ```
 
-该操作撤销所有旧会话和应用密码，连带释放锁并清除临时文件，不删除用户书签。新登录后为各设备重新签发应用密码。没有邮件、默认后门或可猜测的重置 token。
+该操作撤销原账户密码、所有旧会话和应用密码，连带释放锁并清除临时文件，不删除用户书签。使用账户密码的客户端应填写重置后的密码；使用独立应用密码的客户端需重新签发应用密码。没有邮件、默认后门或可猜测的重置 token。

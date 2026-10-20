@@ -1,47 +1,103 @@
-# Wrangler 部署：两个变量 + D1，访问 /init 自动建表
+# 使用 Wrangler 部署
 
-要求 Node.js 22.14+（推荐 24）、npm、Git。以下使用 Bash / Git Bash / WSL；不想开终端可直接用[控制台部署](DEPLOY-DASHBOARD.md)。
+本文通过命令行部署 Worker，创建 D1 数据库并绑定，设置同步账号和密码。所需工具为 Node.js 22.14+（推荐 24）、npm、Git 和浏览器；命令使用 Bash / Git Bash / WSL。
+
+## 1. 下载源码与安装依赖
 
 ```bash
 git clone https://github.com/GrothKeiran/floccus-cf-worker.git
 cd floccus-cf-worker
 npm ci
 cp wrangler.example.toml wrangler.toml
-node scripts/run.mjs wrangler login
-npm run configure
-node scripts/run.mjs wrangler secret put PASSWORD
-npm run deploy
 ```
 
-- 用户名在本地 `wrangler.toml` 的 `[vars] USERNAME` 中设置。
-- 交互提示输入自己的强账户密码（14～256字符）。
-- `npm run configure` 创建 D1，并把真实 UUID 写进本地配置；`DB` 是必须保留的绑定名。
-- **不需要 `npm run db:remote`，不需要手工导入 SQL，也不需要另外设置管理 Token 或 Pepper。**
-- `wrangler.toml` 已被 Git 忽略，不公开真实资源 ID；已有文件不要用模板覆盖。
+`wrangler.toml` 是本地部署配置，已被 Git 忽略。已有配置时请保留原文件。
 
-已有 D1 时不要重复创建：
+## 2. 设置 Worker 名称和用户名
+
+打开 `wrangler.toml`：
+
+- `name`：设置要部署的 Worker 名称，例如 `floccus-cf-worker`。
+- `[vars]` 下的 `USERNAME`：设置自己的用户名，例如 `owner`。
+- 其他内容保留模板值，包括 `nodejs_compat`、兼容日期和 `DB` 绑定。
+
+用户名为 3～64 个英文字母、数字、点、下划线或短横线，首位为字母或数字，保存时转为小写。若账号内已有同名 Worker，请换一个名称，避免覆盖其他服务。
+
+## 3. 登录 Cloudflare
 
 ```bash
-read -rp '自己的 D1 UUID: ' D1_ID
+node scripts/run.mjs wrangler login
+```
+
+在弹出的浏览器页面完成授权。拥有多个 Cloudflare 账号时，确认使用的是本次部署的账号。
+
+## 4. 创建 D1 数据库
+
+```bash
+npm run configure
+```
+
+该命令创建名为 `floccus-bookmarks` 的 D1 数据库，并将实际数据库 ID 写入 `wrangler.toml` 的 `DB` 绑定。
+
+### 使用已有数据库
+
+如果已经创建了本项目要使用的 D1，请从 Cloudflare 控制台复制它的 UUID，然后执行以下命令，替代上面的创建命令：
+
+```bash
+read -rp 'D1 数据库 UUID: ' D1_ID
 npm run configure -- "$D1_ID"
 ```
 
-如果账号里已有同名 Worker，先修改配置中的 `name`，避免覆盖无关服务。多个 Cloudflare 账户时核对正确账号。
+脚本会更新数据库 ID。此处对应的数据库名称为 `floccus-bookmarks`；使用其他数据库名称时，还应将 `wrangler.toml` 中的 `database_name` 改为实际名称，并在维护命令中使用该名称。
 
-## 部署后访问 /init
+如果数据库创建成功但脚本未能自动写入 ID，请使用创建结果中的 UUID 执行上述绑定命令，避免重复创建数据库。
 
-打开 Wrangler 返回的 HTTPS 域名后加 **`/init`**。程序自动应用所有表结构、生成并持久保存内部密钥，并将环境 `USERNAME`、`PASSWORD` 初始化进用户表。已有用户不覆盖，重复访问不清空数据或更换密钥。
+## 5. 设置账号密码
 
-然后直接在 Floccus 添加 WebDAV：URL 填自己的 HTTPS 域名 + `/dav/`，用户名填 **`USERNAME`**，认证密码填刚才设置的同一个 **`PASSWORD`**；文件名 `bookmarks.xbel`、类型 XBEL、加密口令留空。**不必登录 `/admin`，不必生成应用密码。** 管理页和独立应用密码仅为可选高级功能。详细见[账户教程](ACCOUNTS.md)和 [Floccus 配置](FLOCCUS.md)。
+```bash
+node scripts/run.mjs wrangler secret put PASSWORD
+```
 
-## 后续升级
+在交互提示中输入自己的强密码，长度 14～256 字符。密码保存为 Worker Secret，请妥善保管。
 
-先备份 D1，再拉取源码、安装依赖、部署新版，最后访问 `/init` 自动应用新增迁移。结构来自 `migrations/`，运行时已经内嵌，不需要用户执行 SQL。
+到这里，账号配置为 `USERNAME`、`PASSWORD`，数据库绑定为 `DB`。内部密钥和默认限制由程序管理。
 
-旧版 v0.1/v0.2 用户先保留原 Secrets，按[升级说明](UPGRADE-0.3.md)迁入 D1，再移除额外变量。不要直接丢掉原 Pepper 导致旧设备失效。
+## 6. 部署 Worker
 
-Cron 不再是部署前提，程序有请求触发的自动清理；高级用户仍可自选 Cron。默认容量、安全设置已经内置，不需要另填 MAX_* 或注册开关。
+```bash
+npm run deploy
+```
 
-## 可选高级维护
+成功后终端会输出 Worker 的 HTTPS 地址。后续步骤均使用该地址，而不是本地开发地址。
 
-`db:local`、`db:remote` 和管理 API/CLI 仍保留给开发与维护人员，不是普通部署步骤。自行变更迁移后运行 `npm run schema:generate`，确保内嵌结构同步；`typecheck` 会检查是否过期。
+## 7. 初始化数据库
+
+在浏览器打开：
+
+```text
+https://你的Worker域名/init
+```
+
+程序会创建表、索引及迁移记录，将账号和密码哈希保存到 D1，并生成同步所需的内部配置。显示“初始化完成”后，即可配置 Floccus。表结构通过此步骤自动准备，无需手动执行 SQL。
+
+重复访问 `/init` 会保留已有账号、书签和内部密钥。`USERNAME` / `PASSWORD` 用于首次创建账号；修改变量不会重置已有密码。
+
+## 8. 配置 Floccus
+
+| 配置项 | 值 |
+|---|---|
+| 后端 | WebDAV → 自定义服务器 |
+| URL | `https://你的Worker域名/dav/` |
+| 用户名 | 第2步设置的 `USERNAME` |
+| 认证密码 | 第5步设置的 `PASSWORD` |
+| 文件名 | `bookmarks.xbel` |
+| 文件类型 | XBEL |
+| 加密口令 | 留空 |
+
+选择浏览器原生书签栏作为本地目录，使用双向合并，保持安全保护开启。先同步第一台，再配置其他浏览器。详细操作见 [Floccus 使用教程](FLOCCUS.md)。
+
+## 更新与维护
+
+日常更新顺序为：备份 D1 → 更新源码与依赖 → `npm run deploy` → 访问 `/init`。已有数据的版本迁移注意事项见[升级说明](UPGRADE-0.4.md)，备份命令见[维护文档](DEPLOYMENT.md)。
+
+过期会话、同步锁等数据由程序通过受控后台任务清理。数据库迁移文件和 `db:local` / `db:remote` 命令供开发维护使用，常规安装按本文完成即可。
