@@ -1,6 +1,6 @@
 {
   "name": "floccus-cf-worker",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Floccus-compatible WebDAV/XBEL bookmark sync on Cloudflare Workers + D1",
   "type": "module",
@@ -30,7 +30,8 @@
     "schema:check": "node scripts/generate-schema.mjs --check",
     "test:init": "node scripts/run.mjs vitest run tests/initialize.test.ts tests/bootstrap.test.ts",
     "test:password": "node scripts/run.mjs vitest run tests/password-auth.test.ts",
-    "test:environment": "node scripts/run.mjs vitest run tests/environment-account.test.ts"
+    "test:environment": "node scripts/run.mjs vitest run tests/environment-account.test.ts",
+    "test:backup": "node scripts/run.mjs vitest run tests/backup-page.test.ts"
   },
   "dependencies": {
     "fast-xml-parser": "5.11.2"

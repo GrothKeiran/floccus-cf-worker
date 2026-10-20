@@ -19,7 +19,7 @@ Chrome / Edge / Firefox
 - 同步书签标题、网址、文件夹层级及排列顺序。
 - 支持多浏览器双向合并，以及书签新增、编辑、移动和删除。
 - 使用数据库事务、同步锁和版本检查处理并发提交。
-- 账号数据相互隔离，支持备份导出、账号管理和凭证撤销。
+- 账号数据相互隔离，支持备份导出与环境变量更新账号。
 - 数据库表结构由程序初始化，使用 Cloudflare 账号即可部署，无需维护服务器。
 
 本项目是**书签同步后端**，不是通用 WebDAV 网盘。Floccus 中请选择 **WebDAV** 后端和 **XBEL** 文件格式；服务端不提供 Nextcloud Bookmarks API，也不接收加密书签文件。
@@ -172,19 +172,19 @@ https://你的Worker域名/init
 
 首次同步时，Floccus 可能提示大量新增或删除的安全保护。请先核对目录、备份和合并方向，再决定继续；具体操作见 [Floccus 配置与故障处理](docs/FLOCCUS.md)。
 
-## 账号管理与日常维护
+## 备份与日常维护
 
 | 地址 | 用途 |
 |---|---|
 | `/init` | 初始化数据库、应用结构迁移，以及同步 Worker 中的账号配置 |
 | `/dav/` | 在 Floccus 中填写的同步服务地址 |
-| `/admin` | 账号管理、备份导出，以及独立应用密码管理 |
+| `/admin` | 可选备份工具：登录后下载当前账号的 JSON 备份 |
 | `/health/ready` | 查看服务是否准备就绪 |
 
 - `/init` 将 Worker 的账号配置应用到关联的原账号，保留账号内部 ID、书签及同步状态。配置不变时重复访问不会撤销凭证。
 - 更新服务前先备份 D1，再更新 Worker 代码，最后访问 `/init` 应用数据库结构变更。
-- 如果需要单独撤销某台浏览器的访问，可在 `/admin` 为其生成独立应用密码，详见[账号管理](docs/ACCOUNTS.md)。
-- 账户密码模式不提供可靠的唯一设备标识；同一网络出口、相同浏览器的并发配置若需严格隔离，请使用独立应用密码，详见[协议说明](docs/PROTOCOL.md#共享账户密码与可选设备凭证)。
+- 需要额外备份时，可打开 `/admin` 登录并下载 JSON；备份内容与使用方式见[账号与备份](docs/ACCOUNTS.md)。
+- 账户密码模式不提供可靠的唯一设备标识；同一网络出口、相同浏览器下应避免重复配置并发同步任务，详见[协议说明](docs/PROTOCOL.md#共享账户密码与可选设备凭证)。
 
 ### 修改用户名或密码
 
@@ -192,7 +192,7 @@ https://你的Worker域名/init
 2. 打开当前 Worker 的 `/init`，将配置应用到原账号。
 3. 编辑各浏览器现有的 Floccus 同步配置，填写新的用户名和密码，保留服务器地址和书签文件名。
 
-账号配置发生变化时，原会话、应用密码和同步锁会被撤销，书签保留。使用独立应用密码的浏览器需重新签发凭证。用户名与其他账号冲突时操作会停止，原账号不受影响。
+账号配置发生变化时，原登录会话、同步凭证和同步锁会被撤销，书签保留。使用旧凭证的配置应改为账号密码认证。用户名与其他账号冲突时操作会停止，原账号不受影响。
 
 ## 容量、费用与安全
 
@@ -222,6 +222,7 @@ npm run typecheck       # 类型和内嵌数据库结构检查
 npm run test:init       # 数据库初始化测试
 npm run test:environment # 环境变量更新账号测试
 npm run test:password   # 账户密码认证测试
+npm run test:backup     # 备份页面与导出测试
 npm run check           # 完整测试与部署 dry-run
 npm run build:dashboard # 生成控制台部署文件
 ```
@@ -229,7 +230,7 @@ npm run build:dashboard # 生成控制台部署文件
 ## 更多文档
 
 - 部署：[Wrangler](docs/DEPLOY-WRANGLER.md) · [Cloudflare 控制台](docs/DEPLOY-DASHBOARD.md)
-- 使用：[Floccus 配置](docs/FLOCCUS.md) · [账号管理](docs/ACCOUNTS.md)
+- 使用：[Floccus 配置](docs/FLOCCUS.md) · [账号与备份](docs/ACCOUNTS.md)
 - 维护：[费用与备份恢复](docs/DEPLOYMENT.md) · [版本升级](docs/UPGRADE-0.5.md)
 - 技术：[协议研究](docs/RESEARCH.md) · [协议说明](docs/PROTOCOL.md) · [安全配置](docs/SECURITY.md)
 - 开发：[贡献指南](CONTRIBUTING.md) · [测试与验证记录](docs/VALIDATION.md) · [变更记录](CHANGELOG.md)

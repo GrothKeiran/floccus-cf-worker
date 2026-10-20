@@ -17,7 +17,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await h?.close(); await disabled?.close(); await existing?.close(); });
 
-describe('一次性网页初始化', () => {
+describe('兼容初始化与凭证接口', () => {
   test('未配置时不建号，静态网页和状态接口不暴露秘密', async () => {
     const state = await disabled.request('/api/setup/status');
     expect(await state.json()).toEqual({ initialized: false, bootstrapConfigured: false, databaseInitialized: true });
@@ -84,7 +84,7 @@ describe('一次性网页初始化', () => {
     expect((await existing.request('/api/me', 'GET', undefined, `Bearer ${original.session}`)).status).toBe(200);
     expect((await existing.request('/api/login', 'POST', JSON.stringify({ username: 'alice', password: PASSWORD }))).status).toBe(200);
   });
-  test('网页使用的撤销/退出 API 立即使相应凭证失效', async () => {
+  test('兼容撤销/退出 API 立即使相应凭证失效', async () => {
     expect((await h.request('/api/devices/' + deviceId, 'DELETE', undefined, `Bearer ${session}`)).status).toBe(204);
     const auth = 'Basic ' + Buffer.from('owner:' + applicationPassword).toString('base64');
     expect((await h.request('/dav/', 'OPTIONS', undefined, auth)).status).toBe(401);
