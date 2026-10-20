@@ -1,4 +1,5 @@
 import type { Bindings, Env } from '../types';
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../auth/policy';
 import { fail } from '../http';
 import { accountStatements, limit } from '../auth/service';
 import { synchronizeEnvironmentAccount } from './environment-account';
@@ -6,12 +7,24 @@ import { constantEqual, hashPassword, randomToken } from '../auth/crypto';
 import { migrations } from './schema';
 import { clearRuntimeCache, runtimeEnv, validKey } from './runtime';
 
-export function initialAccount(bindings: Bindings): { username: string; password: string } | null {
+interface InitialConfiguration { account: { username: string; password: string } | null; error: string | null }
+function initialConfiguration(bindings: Bindings): InitialConfiguration {
   const modern = bindings.USERNAME !== undefined || bindings.PASSWORD !== undefined;
-  const username = (modern ? bindings.USERNAME : bindings.BOOTSTRAP_USERNAME)?.trim().toLowerCase();
+  const rawUsername = modern ? bindings.USERNAME : bindings.BOOTSTRAP_USERNAME;
   const password = modern ? bindings.PASSWORD : bindings.BOOTSTRAP_PASSWORD;
-  if (!username || !/^[a-z0-9][a-z0-9_.-]{2,63}$/.test(username) || !password || password.length < 14 || password.length > 256 || password.startsWith('replace-')) return null;
-  return { username, password };
+  const invalid = (error: string): InitialConfiguration => ({ account: null, error });
+  if (rawUsername === undefined || rawUsername === '') return invalid('initial_username_missing');
+  if (typeof rawUsername !== 'string') return invalid('initial_username_invalid');
+  const username = rawUsername.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_.-]{2,63}$/.test(username)) return invalid('initial_username_invalid');
+  if (password === undefined || password === '') return invalid('initial_password_missing');
+  if (typeof password !== 'string') return invalid('initial_password_invalid_type');
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) return invalid('initial_password_length_invalid');
+  if (password.startsWith('replace-')) return invalid('initial_password_placeholder');
+  return { account: { username, password }, error: null };
+}
+export function initialAccount(bindings: Bindings): { username: string; password: string } | null {
+  return initialConfiguration(bindings).account;
 }
 async function exists(db: D1Database, sql: string): Promise<boolean> {
   try { return !!await db.prepare(sql).first(); }
@@ -82,9 +95,10 @@ export async function createInitialAccount(env: Env, username: string, password:
 }
 export async function initializeDatabase(bindings: Bindings, ip = 'local'): Promise<{ ready: true; accountCreated: boolean; accountUpdated: boolean }> {
   if (!bindings.DB) fail(503, 'database_binding_required');
-  const account = initialAccount(bindings);
+  const configuration = initialConfiguration(bindings);
+  const account = configuration.account;
   const managedConfiguration = bindings.USERNAME !== undefined || bindings.PASSWORD !== undefined;
-  if (!account && (managedConfiguration || !await accountInitialized(bindings.DB))) fail(503, 'username_password_not_configured');
+  if (!account && (managedConfiguration || !await accountInitialized(bindings.DB))) fail(503, configuration.error ?? 'username_password_not_configured');
   await applySchema(bindings.DB);
   const env = await seedKeys(bindings);
   await limit(env, `init-ip:${ip}`, 20);

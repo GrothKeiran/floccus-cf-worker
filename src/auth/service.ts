@@ -1,4 +1,5 @@
 import type { Env, Principal } from '../types';
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from './policy';
 import { fail, json, jsonBody } from '../http';
 import { constantEqual, hashPassword, randomToken, tokenHash, verifyPassword } from './crypto';
 const DAY = 86_400_000;
@@ -36,7 +37,7 @@ export async function authenticate(req: Request, env: Env, kind: 'session' | 'de
       username = basic.slice(0, colon); token = basic.slice(colon + 1);
     } catch { fail(401, 'unauthorized'); }
   }
-  if (token.length > 256 || token.length < (kind === 'session' ? 32 : 14) || (username !== null && username.length > 64)) fail(401, 'unauthorized');
+  if (token.length > PASSWORD_MAX_LENGTH || token.length < (kind === 'session' ? 32 : PASSWORD_MIN_LENGTH) || (username !== null && username.length > 64)) fail(401, 'unauthorized');
   if (token.length >= 32) {
     const row = await env.DB.prepare(`SELECT c.id,c.user_id,u.username FROM credentials c JOIN users u ON u.id=c.user_id
       WHERE c.token_hash=? AND c.kind=? AND c.auth_mode='token' AND (c.expires_at IS NULL OR c.expires_at>?)`)

@@ -58,7 +58,7 @@ npm run configure -- "$D1_ID"
 node scripts/run.mjs wrangler secret put PASSWORD
 ```
 
-在交互提示中输入自己的强密码，长度 14～256 字符。密码保存为 Worker Secret，请妥善保管。
+在交互提示中输入自己的强密码，长度 5～256 字符。密码保存为 Worker Secret，请妥善保管。
 
 到这里，账号配置为 `USERNAME`、`PASSWORD`，数据库绑定为 `DB`。内部密钥和默认限制由程序管理。
 
@@ -104,6 +104,15 @@ https://你的Worker域名/init
 4. 编辑各浏览器现有的 Floccus 同步配置，更新用户名和密码，保留服务器地址和书签文件名。
 
 原账号的内部 ID、书签和同步状态保留；配置变化会撤销原会话、应用密码和同步锁。使用历史凭证的浏览器应改为账号密码认证。
+
+## 网页与命令行混合维护
+
+如果在 Cloudflare 网页修改过账号变量，后续使用 Wrangler 更新代码时应先确认配置来源。本地 `[vars]` 中同名的变量可能覆盖网页值，`--keep-vars` 不能替代这一步核对。
+
+- **以本地配置为准**：把 `wrangler.toml` 的 `USERNAME` 同步为预期用户名，再部署。
+- **以网页配置为准**：在私有 `wrangler.toml` 顶层设置 `keep_vars = true`，并移除 `[vars]` 中的 `USERNAME` 声明，让 Wrangler 保留远端账号变量。
+
+`PASSWORD` 始终使用 Secret 管理，不要写进普通 `[vars]` 或公开仓库。全程通过网页部署的用户无需处理本地 Wrangler 配置。
 
 ## 更新与维护
 

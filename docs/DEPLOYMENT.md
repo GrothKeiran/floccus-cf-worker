@@ -132,7 +132,7 @@ npm run deploy
 
 ```bash
 read -rsp 'ADMIN_TOKEN: ' ADMIN_TOKEN; echo; export ADMIN_TOKEN
-read -rsp '新密码（至少14字符）: ' FLOCCUS_PASSWORD; echo
+read -rsp '新密码（至少5字符）: ' FLOCCUS_PASSWORD; echo
 export FLOCCUS_PASSWORD
 npm run client -- reset-password alice
 unset ADMIN_TOKEN FLOCCUS_PASSWORD

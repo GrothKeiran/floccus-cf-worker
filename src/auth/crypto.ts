@@ -1,5 +1,6 @@
 import { scryptSync } from 'node:crypto';
 import { fail } from '../http';
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from './policy';
 const enc = new TextEncoder();
 // OWASP-listed scrypt configuration; native Workers support confirmed in production.
 const SCRYPT_N = 16_384;
@@ -19,7 +20,7 @@ function derive(password: string, salt: Uint8Array<ArrayBuffer>): string {
   return hex(scryptSync(password, salt, 32, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: 32 * 1024 * 1024 }));
 }
 export async function hashPassword(password: string): Promise<string> {
-  if (typeof password !== 'string' || password.length < 14 || password.length > 256) fail(400, 'password_length_14_to_256');
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) fail(400, `password_length_${PASSWORD_MIN_LENGTH}_to_${PASSWORD_MAX_LENGTH}`);
   const salt = crypto.getRandomValues(new Uint8Array(16));
   return `${PASSWORD_PREFIX}$${hex(salt)}$${derive(password, salt)}`;
 }

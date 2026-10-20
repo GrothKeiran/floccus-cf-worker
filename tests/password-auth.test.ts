@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { FILE, bookmark, harness, xbel } from './harness';
-const INITIAL = '初始Password:26!'; // 14 chars, UTF-8, colon; deliberately shorter than an app token.
+const INITIAL = '初:A5!'; // 5 chars, UTF-8 and colon: the minimum allowed account password.
 const NEXT = 'Changed-account-password-2026!';
 const basic = (username = 'owner', password = INITIAL) => 'Basic ' + Buffer.from(username + ':' + password).toString('base64');
 const chrome = { 'User-Agent': 'Chrome-test', 'CF-Connecting-IP': '192.0.2.60' };
@@ -13,7 +13,7 @@ describe('账户密码直接用于 Floccus WebDAV', () => {
   beforeAll(async () => { h = await harness({ USERNAME: 'owner', PASSWORD: INITIAL }, { migrate: false, legacySecrets: false }); });
   afterAll(async () => { await h?.close(); });
   test('空 D1 只配置两个变量，/init 后同一个 PASSWORD 即可认证', async () => {
-    expect(INITIAL).toHaveLength(14);
+    expect(INITIAL).toHaveLength(5);
     expect((await h.request('/init', 'GET', undefined, undefined, { Accept: 'application/json' })).status).toBe(200);
     expect((await h.request('/dav/', 'OPTIONS', undefined, basic(), chrome)).status).toBe(204);
     expect((await h.request('/dav/', 'OPTIONS', undefined, basic('OWNER'), chrome)).status).toBe(204);
@@ -25,7 +25,7 @@ describe('账户密码直接用于 Floccus WebDAV', () => {
   test('错误密码与未知用户名拒绝；Basic UTF-8 和最短合法密码不会被 token 长度规则挡住', async () => {
     expect((await h.request('/dav/', 'OPTIONS', undefined, basic('owner', 'Wrong-password-2026!'), chrome)).status).toBe(401);
     expect((await h.request('/dav/', 'OPTIONS', undefined, basic('unknown-user'), chrome)).status).toBe(401);
-    expect((await h.request('/dav/', 'OPTIONS', undefined, basic('owner', 'too-short'), chrome)).status).toBe(401);
+    expect((await h.request('/dav/', 'OPTIONS', undefined, basic('owner', 'four'), chrome)).status).toBe(401);
   });
   test('同密码不同浏览器上下文各有身份，不能抢锁或删除对方锁，temp/MOVE 正常提交', async () => {
     expect((await h.request(FILE + '.lock', 'PUT', 'lock', basic(), chrome)).status).toBe(201);

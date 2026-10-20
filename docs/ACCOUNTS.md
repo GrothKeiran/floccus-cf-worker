@@ -7,7 +7,7 @@
 | 名称 | 类型 | 内容 |
 |---|---|---|
 | `USERNAME` | Text | 用户名，例如 `owner` |
-| `PASSWORD` | Secret | 14～256 字符的强密码 |
+| `PASSWORD` | Secret | 5～256 字符的强密码 |
 
 将 D1 以 `DB` 绑定到 Worker，保存部署后访问 `/init`。程序创建表结构，将用户名和带随机盐的 scrypt 密码哈希保存到 D1，并建立原账号的持久关联。
 

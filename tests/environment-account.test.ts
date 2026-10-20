@@ -103,9 +103,13 @@ describe('通过 Worker 环境变量维护原账号', () => {
     expect((await h.request(FILE + '.lock', 'DELETE', undefined, basic('final-owner', app))).status).toBe(204);
   });
   test('已有库的非法或不完整环境配置拒绝应用，原账号和凭证不变', async () => {
-    for (const next of [{ USERNAME: 'final-owner', PASSWORD: 'short' }, { USERNAME: 'final-owner' }, { PASSWORD: THIRD }]) {
+    for (const [next, error] of [
+      [{ USERNAME: 'final-owner', PASSWORD: 'tiny' }, 'initial_password_length_invalid'],
+      [{ USERNAME: 'final-owner' }, 'initial_password_missing'],
+      [{ PASSWORD: THIRD }, 'initial_username_missing'],
+    ] as const) {
       await h.restart(next, false); const result = await initialize();
-      expect(result.status).toBe(503); expect(await result.json()).toEqual({ error: 'username_password_not_configured' });
+      expect(result.status).toBe(503); expect(await result.json()).toEqual({ error });
     }
     expect((await h.request('/api/me', 'GET', undefined, 'Bearer ' + session)).status).toBe(200);
     expect(await h.db.prepare('SELECT username FROM users WHERE id=?').bind(userId).first('username')).toBe('final-owner');
@@ -115,6 +119,23 @@ describe('通过 Worker 环境变量维护原账号', () => {
     const result = await h.request('/init?USERNAME=intruder&PASSWORD=ignored', 'POST', JSON.stringify({ username: 'intruder', password: FIRST }), undefined, headers);
     expect(result.status).toBe(200); expect(await result.json()).toEqual({ ready: true, accountCreated: false, accountUpdated: false });
     expect(await h.db.prepare('SELECT username FROM users WHERE id=?').bind(userId).first('username')).toBe('final-owner');
+  });
+  test('环境变量更新为5字符密码后可直接同步和登录导出，4字符仍被拒绝', async () => {
+    const password = 'A5:b!'; expect(password).toHaveLength(5);
+    await h.restart({ USERNAME: 'final-owner', PASSWORD: password }, false);
+    expect(await (await initialize()).json()).toEqual({ ready: true, accountCreated: false, accountUpdated: true });
+    expect((await h.request(FILE, 'GET', undefined, basic('final-owner', password))).status).toBe(200);
+    expect((await h.request('/dav/', 'OPTIONS', undefined, basic('final-owner', THIRD))).status).toBe(401);
+    const login = await h.request('/api/login', 'POST', JSON.stringify({ username: 'final-owner', password }));
+    expect(login.status).toBe(200);
+    const access = (await login.json() as { accessToken: string }).accessToken;
+    expect((await h.request('/api/export', 'GET', undefined, 'Bearer ' + access)).status).toBe(200);
+    expect(await h.db.prepare('SELECT password_hash FROM users WHERE id=?').bind(userId).first('password_hash')).toMatch(/^scrypt\$16384\$8\$5\$/);
+    expect(await h.db.prepare('SELECT * FROM sync_state WHERE user_id=?').bind(userId).first()).toEqual(storedState);
+    await h.restart({ USERNAME: 'final-owner', PASSWORD: 'four' }, false);
+    const denied = await initialize(); expect(denied.status).toBe(503);
+    expect(await denied.json()).toEqual({ error: 'initial_password_length_invalid' });
+    expect((await h.request('/dav/', 'OPTIONS', undefined, basic('final-owner', password))).status).toBe(204);
   });
   test('删除账号后保留关联标记，不重建或改用其他用户', async () => {
     await h.db.prepare('DELETE FROM users WHERE id=?').bind(userId).run();

@@ -1,6 +1,6 @@
 {
   "name": "floccus-cf-worker",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Floccus-compatible WebDAV/XBEL bookmark sync on Cloudflare Workers + D1",
   "type": "module",

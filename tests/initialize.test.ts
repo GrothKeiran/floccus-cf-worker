@@ -11,7 +11,7 @@ let previousKeys = '';
 const initHeaders = { Accept: 'application/json' };
 beforeAll(async () => {
   fresh = await harness({ USERNAME: 'owner', PASSWORD: INIT_PASSWORD }, { migrate: false, legacySecrets: false });
-  invalid = await harness({ USERNAME: 'owner', PASSWORD: 'short' }, { migrate: false, legacySecrets: false });
+  invalid = await harness({ USERNAME: 'owner', PASSWORD: 'tiny' }, { migrate: false, legacySecrets: false });
   legacy = await harness({ USERNAME: 'alice', PASSWORD });
   missingPepper = await harness({ USERNAME: 'alice', PASSWORD });
 });
@@ -27,7 +27,7 @@ describe('仅两个变量与空 D1 的完整初始化', () => {
   test('错误配置不创建表；初始化不接受 URL 注入其他账号', async () => {
     const response = await invalid.request('/init', 'GET', undefined, undefined, initHeaders);
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: 'username_password_not_configured' });
+    expect(await response.json()).toEqual({ error: 'initial_password_length_invalid' });
     expect(await invalid.db.prepare("SELECT name FROM sqlite_master WHERE name='users'").first()).toBeNull();
     expect((await fresh.request('/init', 'POST', undefined, undefined, { Origin: 'https://evil.test' })).status).toBe(403);
   });

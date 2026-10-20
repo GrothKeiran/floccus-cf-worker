@@ -58,6 +58,7 @@ describe('精简书签备份页面', () => {
   afterAll(async () => { await h?.close(); await empty?.close(); });
   test('页面仅保留登录和导出，不含设备表单、应用密码功能或自动建号调用', async () => {
     const ui = await backupPage(h);
+    expect(ui.html).toMatch(/id="password"[^>]+minlength="5"/);
     expect(ui.html).toContain('书签备份'); expect(ui.html).toContain('下载备份 JSON');
     expect(ui.html).not.toMatch(/生成应用密码|设备列表|设备名称|device-form|device-list|application-password/);
     expect(ui.js).not.toMatch(/\/api\/devices|\/api\/setup['"]|localStorage|sessionStorage|innerHTML|eval\(/);

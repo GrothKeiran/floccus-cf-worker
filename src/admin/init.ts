@@ -1,6 +1,13 @@
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../auth/policy';
 export function initPage(errorCode?: string, status = 200): Response {
   const messages: Record<string, string> = {
-    username_password_not_configured: '请在 Worker 添加文本变量 USERNAME 和 Secret 类型的 PASSWORD（14～256字符），保存部署后重新访问 /init。',
+    initial_username_missing: '缺少 USERNAME。请在当前生产 Worker 添加文本变量 USERNAME，保存部署后重新访问 /init。',
+    initial_username_invalid: 'USERNAME 格式不合法：需为3～64个英文字母、数字、点、下划线或短横线，首位为字母或数字。修正后保存部署并访问 /init。',
+    initial_password_missing: '缺少 PASSWORD。请在当前生产 Worker 添加 Secret 类型的 PASSWORD，保存部署后重新访问 /init。',
+    initial_password_invalid_type: 'PASSWORD 必须是文本密码，请使用 Secret 类型保存，不要设置为JSON对象或其他类型。',
+    initial_password_length_invalid: `PASSWORD 长度不符合要求：必须为${PASSWORD_MIN_LENGTH}～${PASSWORD_MAX_LENGTH}个字符。本次未应用新账号配置；请设置符合长度要求的密码，保存部署后重新访问 /init。`,
+    initial_password_placeholder: 'PASSWORD 仍是 replace- 开头的示例占位值。请换成自己的真实强密码，保存部署后重新访问 /init。',
+    username_password_not_configured: `请在 Worker 添加文本变量 USERNAME 和 Secret 类型的 PASSWORD（${PASSWORD_MIN_LENGTH}～${PASSWORD_MAX_LENGTH}字符），保存部署后重新访问 /init。`,
     database_binding_required: '请先创建自己的 D1 数据库，并以 DB 为变量名绑定到本 Worker。',
     legacy_pepper_required: '旧库存在设备凭证。请先保留原 TOKEN_PEPPER 再访问 /init，程序会自动将其安全保存，避免使原设备失效。',
     secret_configuration_conflict: '旧 Secret 与数据库内部配置不一致。已停止，不会擅自替换密钥或重置凭证。',

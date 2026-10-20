@@ -1,3 +1,4 @@
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../auth/policy';
 const page = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Floccus 书签备份</title><link rel="stylesheet" href="/admin/app.css"><script src="/admin/app.js" defer></script></head>
@@ -5,7 +6,7 @@ const page = `<!doctype html>
 <p id="message" role="status" aria-live="polite"></p>
 <section id="login-panel" class="card"><h2>登录备份工具</h2><p id="setup-note">正在读取服务状态…</p>
 <form id="login-form"><label for="username">用户名</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="64" required>
-<label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="14" maxlength="256" required>
+<label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="${PASSWORD_MIN_LENGTH}" maxlength="${PASSWORD_MAX_LENGTH}" required>
 <button id="login-button" type="submit" disabled>登录</button></form></section>
 <section id="account-panel" hidden><div class="card"><h2>导出备份</h2><p>当前账号：<strong id="account-name"></strong></p>
 <button id="export" type="button">下载备份 JSON</button><button id="logout" type="button" class="secondary">退出登录</button>
